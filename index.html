@@ -1,0 +1,1250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NGINX TCP/UDP Pipeline — Expanding L4 Load Balancing at Controller Scale</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.6.1/mermaid.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+<style>
+:root {
+  --bg:       #060910;
+  --surface:  #0d1420;
+  --surface2: #111d2e;
+  --border:   #162033;
+  --accent:   #00c8ff;
+  --accent2:  #7b61ff;
+  --green:    #00e5a0;
+  --red:      #ff4d6a;
+  --amber:    #ffb830;
+  --text:     #dce6f5;
+  --muted:    #4a6080;
+  --heading:  #f0f6ff;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 15px;
+  line-height: 1.65;
+  overflow-x: hidden;
+}
+
+/* ── NOISE TEXTURE OVERLAY ── */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.4;
+}
+
+/* ── NAV ── */
+nav {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 100;
+  background: rgba(6,9,16,0.85);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border);
+  padding: 0 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 56px;
+}
+.nav-logo {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 20px;
+  letter-spacing: 3px;
+  color: var(--accent);
+}
+.nav-links {
+  display: flex;
+  gap: 32px;
+  list-style: none;
+}
+.nav-links a {
+  font-size: 12px;
+  font-family: 'DM Mono', monospace;
+  color: var(--muted);
+  text-decoration: none;
+  letter-spacing: 1px;
+  transition: color 0.2s;
+}
+.nav-links a:hover { color: var(--accent); }
+
+/* ── SECTIONS ── */
+section {
+  position: relative;
+  z-index: 1;
+  padding: 100px 64px 80px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* ── HERO ── */
+.hero-section {
+  min-height: 100vh;
+  max-width: 100%;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  background: radial-gradient(ellipse 120% 80% at 80% 50%, rgba(0,200,255,0.06), transparent),
+              radial-gradient(ellipse 60% 60% at 10% 90%, rgba(123,97,255,0.06), transparent);
+  overflow: hidden;
+}
+.hero-inner {
+  position: relative;
+  z-index: 2;
+  padding: 0 80px;
+  max-width: 900px;
+}
+.hero-eyebrow {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 4px;
+  color: var(--accent);
+  text-transform: uppercase;
+  margin-bottom: 24px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.hero-eyebrow::before {
+  content: '';
+  display: block;
+  width: 32px;
+  height: 1px;
+  background: var(--accent);
+}
+.hero-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: clamp(56px, 8vw, 100px);
+  line-height: 0.95;
+  color: var(--heading);
+  letter-spacing: 2px;
+  margin-bottom: 8px;
+}
+.hero-title .accent { color: var(--accent); }
+.hero-title .accent2 { color: var(--green); }
+.hero-sub {
+  font-size: 18px;
+  font-weight: 300;
+  color: var(--muted);
+  max-width: 560px;
+  margin: 24px 0 48px;
+  line-height: 1.6;
+}
+.hero-stats {
+  display: flex;
+  gap: 48px;
+  border-top: 1px solid var(--border);
+  padding-top: 40px;
+}
+.hero-stat .num {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 48px;
+  color: var(--accent);
+  line-height: 1;
+  display: block;
+}
+.hero-stat .label {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 1px;
+  margin-top: 4px;
+}
+
+/* Grid bg lines */
+.hero-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(0,200,255,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,200,255,0.03) 1px, transparent 1px);
+  background-size: 60px 60px;
+  mask-image: radial-gradient(ellipse 100% 100% at 100% 50%, black 20%, transparent 70%);
+}
+
+/* ── SECTION HEADER ── */
+.sec-header {
+  margin-bottom: 52px;
+}
+.sec-tag {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 3px;
+  color: var(--accent);
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.sec-tag::before {
+  content: '';
+  width: 20px;
+  height: 1px;
+  background: var(--accent);
+}
+.sec-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: clamp(36px, 4vw, 52px);
+  color: var(--heading);
+  letter-spacing: 2px;
+  line-height: 1;
+}
+.sec-desc {
+  font-size: 15px;
+  color: var(--muted);
+  max-width: 640px;
+  margin-top: 12px;
+  line-height: 1.7;
+}
+
+/* ── DIAGRAM FRAMES ── */
+.diagram-frame {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  margin-bottom: 32px;
+}
+.diagram-bar {
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 24px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dot { width: 10px; height: 10px; border-radius: 50%; }
+.dot-r { background: #ff5f57; }
+.dot-y { background: #febc2e; }
+.dot-g { background: #28c840; }
+.diagram-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--muted);
+  margin-left: 8px;
+  letter-spacing: 1px;
+}
+.diagram-body {
+  padding: 32px 24px;
+  overflow-x: auto;
+}
+.mermaid {
+  display: flex;
+  justify-content: center;
+}
+.mermaid svg { max-width: 100% !important; height: auto !important; }
+
+/* ── STATE LABEL ── */
+.state-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  border-radius: 6px;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 1px;
+  margin-bottom: 16px;
+}
+.state-label.before { background: rgba(255,77,106,0.1); border: 1px solid rgba(255,77,106,0.3); color: #ff4d6a; }
+.state-label.after  { background: rgba(0,229,160,0.08); border: 1px solid rgba(0,229,160,0.3); color: #00e5a0; }
+
+/* ── IMPACT SECTION ── */
+.impact-section {
+  background: linear-gradient(135deg, rgba(0,200,255,0.04), rgba(123,97,255,0.04));
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 100px 64px;
+  max-width: 100%;
+}
+.impact-inner { max-width: 1200px; margin: 0 auto; }
+
+.big-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 2px;
+  margin: 52px 0;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+}
+.big-stat {
+  background: var(--surface);
+  padding: 40px 32px;
+  text-align: center;
+}
+.big-stat .n {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 64px;
+  line-height: 1;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  display: block;
+  margin-bottom: 12px;
+}
+.big-stat .l {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.wins-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  margin-top: 8px;
+}
+.win-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 28px 24px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.25s, transform 0.25s;
+}
+.win-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-3px);
+}
+.win-card::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+}
+.win-card.product::after { background: linear-gradient(90deg, var(--accent), transparent); }
+.win-card.tech::after    { background: linear-gradient(90deg, var(--green), transparent); }
+.win-card.lead::after    { background: linear-gradient(90deg, var(--amber), transparent); }
+
+.win-category {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-bottom: 18px;
+}
+.win-category.product { color: var(--accent); }
+.win-category.tech    { color: var(--green); }
+.win-category.lead    { color: var(--amber); }
+
+.win-items {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.win-items li {
+  font-size: 13.5px;
+  color: #8ba4c4;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  line-height: 1.5;
+}
+.win-items li::before {
+  content: '✓';
+  color: var(--green);
+  font-size: 12px;
+  font-weight: 700;
+  margin-top: 1px;
+  flex-shrink: 0;
+}
+
+/* ── CODE BLOCK ── */
+.code-block {
+  background: #040609;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 28px 28px;
+  font-family: 'DM Mono', monospace;
+  font-size: 12.5px;
+  line-height: 1.8;
+  overflow-x: auto;
+  color: #94a3b8;
+}
+.code-block .k  { color: #7b61ff; }
+.code-block .d  { color: #00c8ff; }
+.code-block .s  { color: #7bdf8e; }
+.code-block .c  { color: #3a5270; font-style: italic; }
+.code-block .n  { color: #ffc45e; }
+.code-block .com { color: #1e3a5f; font-style: italic; font-size: 11px; }
+
+/* ── TIMELINE ── */
+.timeline {
+  position: relative;
+  padding-left: 40px;
+}
+.timeline::before {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  background: linear-gradient(180deg, var(--accent) 0%, var(--accent2) 50%, var(--green) 100%);
+  opacity: 0.3;
+}
+.tl-item {
+  position: relative;
+  padding: 0 0 36px 24px;
+}
+.tl-item::before {
+  content: '';
+  position: absolute;
+  left: -36px;
+  top: 6px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg);
+  box-shadow: 0 0 10px rgba(0,200,255,0.5);
+}
+.tl-time {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--accent);
+  letter-spacing: 2px;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+.tl-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--heading);
+  margin-bottom: 8px;
+}
+.tl-desc {
+  font-size: 13.5px;
+  color: var(--muted);
+  line-height: 1.65;
+}
+.tl-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.tl-tag {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  padding: 3px 10px;
+  border-radius: 4px;
+  background: rgba(0,200,255,0.08);
+  border: 1px solid rgba(0,200,255,0.15);
+  color: var(--accent);
+  letter-spacing: 1px;
+}
+
+/* ── RISK TABLE ── */
+.risk-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 16px;
+  margin: 28px 0;
+}
+.risk-card {
+  background: var(--surface);
+  border: 1px solid rgba(255,77,106,0.2);
+  border-top: 3px solid var(--red);
+  border-radius: 10px;
+  padding: 20px;
+}
+.risk-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--red);
+  letter-spacing: 2px;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+.risk-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--heading);
+  margin-bottom: 6px;
+}
+.risk-desc { font-size: 12.5px; color: var(--muted); line-height: 1.55; }
+
+/* ── SOLVED CARDS ── */
+.solved-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 20px;
+}
+.solved-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--green);
+  border-radius: 0 8px 8px 0;
+  padding: 16px 18px;
+}
+.solved-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--green);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.solved-title { font-size: 13.5px; font-weight: 600; color: var(--heading); margin-bottom: 4px; }
+.solved-desc  { font-size: 12.5px; color: var(--muted); line-height: 1.55; }
+
+/* ── DIVIDER ── */
+.divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 0;
+}
+
+/* ── FOOTER ── */
+footer {
+  text-align: center;
+  padding: 48px;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 1px;
+  border-top: 1px solid var(--border);
+}
+footer a { color: var(--accent); text-decoration: none; }
+
+/* ── ANIMATIONS ── */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-up { animation: fadeUp 0.7s ease both; }
+.delay-1 { animation-delay: 0.1s; }
+.delay-2 { animation-delay: 0.2s; }
+.delay-3 { animation-delay: 0.3s; }
+.delay-4 { animation-delay: 0.5s; }
+
+@media (max-width: 900px) {
+  .arch-grid { grid-template-columns: 1fr !important; }
+  .io-grid   { grid-template-columns: 1fr !important; }
+  .io-arrow  { display: none !important; }
+}
+@media (max-width: 768px) {
+  section { padding: 80px 24px 60px; }
+  .hero-inner { padding: 0 24px; }
+  .big-stats { grid-template-columns: 1fr 1fr; }
+  .wins-grid { grid-template-columns: 1fr; }
+  .risk-row  { grid-template-columns: 1fr; }
+  .solved-row { grid-template-columns: 1fr; }
+  .hero-stats { gap: 24px; flex-wrap: wrap; }
+  nav { padding: 0 24px; }
+  .nav-links { display: none; }
+  .impact-section { padding: 80px 24px; }
+}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-logo">NGINX // CONTROLLER</div>
+  <ul class="nav-links">
+    <li><a href="#architecture">Architecture</a></li>
+    <li><a href="#config">Config Pipeline</a></li>
+    <li><a href="#metrics">Metrics</a></li>
+    <li><a href="#impact">Impact</a></li>
+    <li><a href="#erd">Data Model</a></li>
+  </ul>
+</nav>
+
+<!-- ══════════════════ HERO ══════════════════ -->
+<div class="hero-section" style="padding-top:56px;">
+  <div class="hero-grid"></div>
+  <div class="hero-inner">
+    <div class="hero-eyebrow fade-up">Staff Engineer · NGINX Controller</div>
+    <h1 class="hero-title fade-up delay-1">
+      EXPANDING<br>
+      <span class="accent">TCP/UDP</span><br>
+      <span class="accent2">PIPELINE</span>
+    </h1>
+    <p class="hero-sub fade-up delay-2">
+      Architected and delivered NGINX Controller's L4 load balancing capability —
+      extending an HTTP-only platform to full TCP/UDP support at ~1 billion metrics/day scale.
+    </p>
+    <div class="hero-stats fade-up delay-3">
+      <div class="hero-stat">
+        <span class="num">~1B</span>
+        <span class="label">METRICS / DAY</span>
+      </div>
+      <div class="hero-stat">
+        <span class="num">9</span>
+        <span class="label">SYSTEMS CHANGED</span>
+      </div>
+      <div class="hero-stat">
+        <span class="num">0</span>
+        <span class="label">HTTP REGRESSIONS</span>
+      </div>
+      <div class="hero-stat">
+        <span class="num">V1</span>
+        <span class="label">METRICS UI SHIPPED</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ══════════════════ ARCHITECTURE ══════════════════ -->
+<section id="architecture">
+  <div class="sec-header">
+    <div class="sec-tag">System Design</div>
+    <h2 class="sec-title">Architecture — Before & After</h2>
+    <p class="sec-desc">
+      TCP/UDP wasn't an isolated feature — it was a cross-cutting change touching the API layer,
+      config generation engine, remote agent, and the metrics pipeline simultaneously.
+    </p>
+  </div>
+
+  <!-- Side-by-side Before / After -->
+  <div class="arch-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;">
+
+    <!-- BEFORE -->
+    <div>
+      <div class="state-label before" style="margin-bottom:12px;">BEFORE — HTTP Only</div>
+      <div class="diagram-frame" style="border-color:rgba(255,77,106,0.25);">
+        <div class="diagram-bar">
+          <div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div>
+          <span class="diagram-label">before-state.arch</span>
+        </div>
+        <div class="diagram-body" style="padding:16px 12px;">
+          <div class="mermaid">
+flowchart TB
+    classDef existing fill:#0f2340,stroke:#1e4d8c,color:#93c5fd
+    classDef infra    fill:#1a1040,stroke:#4c3a9e,color:#c4b5fd
+    classDef agent    fill:#0a0a20,stroke:#3a3a8c,color:#a5b4fc
+    classDef store    fill:#100e0a,stroke:#4a3a28,color:#d4c4a8
+    classDef missing  fill:#2a0a10,stroke:#ef4444,color:#fca5a5,stroke-dasharray:6 3
+
+    subgraph CTRL["Controller"]
+        direction TB
+        EXT["Declarative API\nHTTP only"]:::existing
+        NRP["NGINX Reverse Proxy"]:::existing
+        TMPL["Go Template Engine\nHTTP sequential"]:::existing
+        GAP1["GAP: No TCP/UDP Component\nCannot provision L4"]:::missing
+        EXT --> NRP --> TMPL
+    end
+
+    subgraph MSG["NATS Streaming"]
+        direction TB
+        RECV["Receiver\nHTTP metrics only"]:::existing
+        NATS["NATS"]:::infra
+        DBFW["DB Forwarder"]:::existing
+        GAP2["GAP: No TCP metrics\nNever reach forwarder"]:::missing
+        PY["Python Forwarders"]:::existing
+        RECV --> NATS --> DBFW
+        DBFW -.->|missing| GAP2
+        NATS --> PY
+    end
+
+    subgraph STORE["Storage"]
+        CH["Clickhouse\nHTTP dims only"]:::existing
+        PG["PostgreSQL"]:::store
+        DBFW --> CH
+        DBFW --> PG
+    end
+
+    subgraph DP["Data Plane Host"]
+        direction TB
+        AGT["Agent\nHTTP config only"]:::existing
+        AVRD["AVRD\nHTTP metrics only"]:::agent
+        NGX["NGINX\nHTTP LB only"]:::agent
+        GAP3["GAP: No stream block\nTCP/UDP not handled"]:::missing
+        AGT --> NGX
+        NGX -->|http metrics| AVRD
+        AVRD --> AGT
+    end
+
+    TMPL -->|http only| AGT
+    AGT -->|http metrics| RECV
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AFTER — identical structure to BEFORE, red gaps become green -->
+    <div>
+      <div class="state-label after" style="margin-bottom:12px;">AFTER — Full TCP/UDP Pipeline</div>
+      <div class="diagram-frame" style="border-color:rgba(0,229,160,0.2);">
+        <div class="diagram-bar">
+          <div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div>
+          <span class="diagram-label">after-state.arch — green = changed</span>
+        </div>
+        <div class="diagram-body" style="padding:16px 12px;">
+          <div class="mermaid">
+flowchart TB
+    classDef newc     fill:#053a22,stroke:#00e5a0,color:#d1fae5,stroke-width:2px
+    classDef existing fill:#0f2340,stroke:#1e4d8c,color:#93c5fd
+    classDef infra    fill:#1a1040,stroke:#4c3a9e,color:#c4b5fd
+    classDef agent    fill:#0a0a20,stroke:#3a3a8c,color:#a5b4fc
+    classDef store    fill:#100e0a,stroke:#4a3a28,color:#d4c4a8
+
+    subgraph CTRL["Controller"]
+        direction TB
+        EXT["Declarative API\nHTTP + TCP + UDP"]:::newc
+        NRP["NGINX Reverse Proxy"]:::existing
+        TMPL["Go Template Engine\nConcurrent goroutines\nHTTP + stream parallel\natomic write"]:::newc
+        GAP1["TCP/UDP Component\nstreamIngress + streamBackend\nhealth checks, timeouts"]:::newc
+        EXT --> NRP --> TMPL
+    end
+
+    subgraph MSG["NATS Streaming"]
+        direction TB
+        RECV["Receiver\nnullable TCP/UDP dims\nHTTP hot path unchanged"]:::newc
+        NATS["NATS"]:::infra
+        DBFW["DB Forwarder"]:::existing
+        GAP2["TCP/UDP metrics\nnow reach forwarder"]:::newc
+        PY["Python Forwarders"]:::existing
+        RECV --> NATS --> DBFW
+        DBFW -->|stream events| GAP2
+        NATS --> PY
+    end
+
+    subgraph STORE["Storage"]
+        CH["Clickhouse\nprotocol, server_zone\nupstream_group dims\n1B/day, 0 regressions"]:::newc
+        PG["PostgreSQL\nTCP/UDP Component metadata"]:::newc
+        DBFW --> CH
+        DBFW --> PG
+    end
+
+    subgraph DP["Data Plane Host"]
+        direction TB
+        AGT["Agent\nhttp + stream config\nTCP/UDP metrics\napp-centric dims"]:::newc
+        AVRD["AVRD\nhttp + TCP/UDP stream metrics\nngx_stream module stats"]:::newc
+        NGX["NGINX + stream module\nHTTP + TCP/UDP LB"]:::newc
+        GAP3["Stream block deployed\nTCP/UDP now handled"]:::newc
+        AGT --> NGX
+        NGX -->|http + stream metrics| AVRD
+        AVRD --> AGT
+    end
+
+    TMPL -->|http + stream blocks| AGT
+    AGT -->|metrics with dims| RECV
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+</section>
+
+<hr class="divider">
+
+<!-- ══════════════════ CONFIG PIPELINE ══════════════════ -->
+<section id="config">
+  <div class="sec-header">
+    <div class="sec-tag">Config Pipeline</div>
+    <h2 class="sec-title">Concurrent Config Generation</h2>
+    <p class="sec-desc">
+      Two Go goroutines render HTTP and stream blocks in parallel,
+      merged into a single atomic write — preserving config deployment SLA
+      while adding a full new protocol family.
+    </p>
+  </div>
+
+  <!-- Input → Output label row -->
+  <div style="display:grid;grid-template-columns:1fr 40px 1fr;gap:0;align-items:center;margin-bottom:8px;">
+    <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--accent2);letter-spacing:3px;text-transform:uppercase;padding-left:4px;">API Input — Component JSON</div>
+    <div></div>
+    <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--green);letter-spacing:3px;text-transform:uppercase;padding-left:4px;">Rendered nginx.conf Output</div>
+  </div>
+
+  <!-- Input → Output side by side -->
+  <div style="display:grid;grid-template-columns:1fr 40px 1fr;gap:0;align-items:center;margin-bottom:48px;">
+
+    <!-- LEFT: API Input -->
+    <div class="diagram-frame">
+      <div class="diagram-bar" style="justify-content:space-between;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div>
+          <span class="diagram-label">API INPUT — Component JSON</span>
+        </div>
+        <span style="font-family:'DM Mono',monospace;font-size:10px;color:var(--accent2);letter-spacing:1px;">REQUEST</span>
+      </div>
+      <div class="diagram-body" style="padding:0;">
+        <pre class="code-block" style="border:none;border-radius:0;margin:0;font-size:11.5px;"><span style="color:#7b61ff;">POST</span>  <span style="color:#00c8ff;">/api/v1/services/environments/{envName}/apps/{appName}/components</span>
+
+<span style="color:#1e3a5f;">// ── EXISTING HTTP Component (unchanged) ────────────────────</span>
+{
+  <span style="color:#7bdf8e;">"metadata"</span>: { <span style="color:#7bdf8e;">"name"</span>: <span style="color:#7bdf8e;">"my-http-component"</span> },
+  <span style="color:#7bdf8e;">"desiredState"</span>: {
+    <span style="color:#7bdf8e;">"ingress"</span>: {
+      <span style="color:#7bdf8e;">"uris"</span>: { <span style="color:#7bdf8e;">"/api"</span>: {} },
+      <span style="color:#7bdf8e;">"gatewayRefs"</span>: [{ <span style="color:#7bdf8e;">"ref"</span>: <span style="color:#7bdf8e;">"/gateways/my-gw"</span> }]
+    },
+    <span style="color:#7bdf8e;">"backend"</span>: {
+      <span style="color:#7bdf8e;">"workloadGroups"</span>: {
+        <span style="color:#7bdf8e;">"group1"</span>: { <span style="color:#7bdf8e;">"uris"</span>: { <span style="color:#7bdf8e;">"http://10.0.0.1:8080"</span>: {} } }
+      }
+    }
+  }
+}
+
+<span style="color:#1e3a5f;">// ── NEW TCP/UDP Component (* designed in this project) ──────</span>
+{
+  <span style="color:#7bdf8e;">"metadata"</span>: { <span style="color:#7bdf8e;">"name"</span>: <span style="color:#7bdf8e;">"my-tcp-component"</span> },
+  <span style="color:#7bdf8e;">"desiredState"</span>: {
+    <span style="color:#7bdf8e;">"streamIngress"</span>: {        <span style="color:#1e3a5f;">// * NEW top-level key</span>
+      <span style="color:#7bdf8e;">"serverName"</span>: <span style="color:#7bdf8e;">"db-frontend"</span>,
+      <span style="color:#7bdf8e;">"listen"</span>: {
+        <span style="color:#7bdf8e;">"port"</span>: <span style="color:#ffc45e;">5432</span>,
+        <span style="color:#7bdf8e;">"protocol"</span>: <span style="color:#7bdf8e;">"TCP"</span>,     <span style="color:#1e3a5f;">// "TCP" | "UDP"</span>
+        <span style="color:#7bdf8e;">"udpReuseport"</span>: <span style="color:#ffc45e;">false</span>,
+        <span style="color:#7bdf8e;">"proxyProtocol"</span>: <span style="color:#ffc45e;">false</span>
+      }
+    },
+    <span style="color:#7bdf8e;">"streamBackend"</span>: {        <span style="color:#1e3a5f;">// * NEW top-level key</span>
+      <span style="color:#7bdf8e;">"workloadGroups"</span>: {
+        <span style="color:#7bdf8e;">"db-pool"</span>: {
+          <span style="color:#7bdf8e;">"loadBalancingMethod"</span>: {
+            <span style="color:#7bdf8e;">"type"</span>: <span style="color:#7bdf8e;">"HASH"</span>,
+            <span style="color:#7bdf8e;">"hashKey"</span>: <span style="color:#7bdf8e;">"$remote_addr"</span>,
+            <span style="color:#7bdf8e;">"consistent"</span>: <span style="color:#ffc45e;">true</span>
+          },
+          <span style="color:#7bdf8e;">"uris"</span>: {
+            <span style="color:#7bdf8e;">"10.0.0.1:5432"</span>: { <span style="color:#7bdf8e;">"weight"</span>: <span style="color:#ffc45e;">5</span> },
+            <span style="color:#7bdf8e;">"10.0.0.2:5432"</span>: { <span style="color:#7bdf8e;">"weight"</span>: <span style="color:#ffc45e;">3</span> }
+          }
+        }
+      },
+      <span style="color:#7bdf8e;">"healthCheck"</span>: { <span style="color:#7bdf8e;">"type"</span>: <span style="color:#7bdf8e;">"TCP_CONNECT"</span> },
+      <span style="color:#7bdf8e;">"gracefulDelay"</span>: <span style="color:#ffc45e;">60</span>       <span style="color:#1e3a5f;">// * drain long-lived connections</span>
+    }
+  }
+}</pre>
+      </div>
+    </div>
+
+    <!-- RIGHT: nginx.conf Output -->
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;">
+      <div style="width:2px;height:40px;background:linear-gradient(180deg,var(--accent2),var(--green));border-radius:2px;"></div>
+      <div style="font-family:'DM Mono',monospace;font-size:16px;color:var(--green);">▼</div>
+      <div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--muted);letter-spacing:1px;text-align:center;writing-mode:vertical-rl;transform:rotate(180deg);line-height:1.4;">Go template<br>render</div>
+    </div>
+
+    <div class="diagram-frame">
+      <div class="diagram-bar" style="justify-content:space-between;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div>
+          <span class="diagram-label">RENDERED nginx.conf — atomic merge</span>
+        </div>
+        <span style="font-family:'DM Mono',monospace;font-size:10px;color:#00e5a0;letter-spacing:1px;">OUTPUT</span>
+      </div>
+      <div class="diagram-body" style="padding:0;">
+        <pre class="code-block" style="border:none;border-radius:0;margin:0;font-size:11.5px;"><span style="color:#1e3a5f;">// goroutine 1 renders http{} ────────────────────────────────</span>
+<span style="color:#7b61ff;">http</span> {
+    <span style="color:#ffc45e;">upstream</span> <span style="color:#00c8ff;">api-backend</span> {
+        <span style="color:#ffc45e;">least_conn</span>;
+        <span style="color:#ffc45e;">server</span>  10.0.0.1:8080  weight=5  max_fails=3;
+        <span style="color:#ffc45e;">server</span>  10.0.0.2:8080  weight=3;
+        <span style="color:#ffc45e;">keepalive</span>  32;
+    }
+    <span style="color:#7b61ff;">server</span> {
+        <span style="color:#ffc45e;">listen</span>       80;
+        <span style="color:#ffc45e;">server_name</span>  api.example.com;
+        <span style="color:#7b61ff;">location</span> /api {
+            <span style="color:#ffc45e;">proxy_pass</span>         http://api-backend;
+            <span style="color:#ffc45e;">proxy_http_version</span> 1.1;
+            <span style="color:#ffc45e;">proxy_read_timeout</span> 60s;
+        }
+    }
+}
+
+<span style="color:#1e3a5f;">// goroutine 2 renders stream{} ──────────────────────────────</span>
+<span style="color:#7b61ff;">stream</span> {
+    <span style="color:#ffc45e;">upstream</span> <span style="color:#00c8ff;">db-pool</span> {
+        <span style="color:#ffc45e;">hash</span>  $remote_addr  consistent;
+        <span style="color:#ffc45e;">server</span>  10.0.0.1:5432  weight=5  max_fails=3;
+        <span style="color:#ffc45e;">server</span>  10.0.0.2:5432  weight=3;
+    }
+    <span style="color:#7b61ff;">server</span> {
+        <span style="color:#ffc45e;">listen</span>                  5432;
+        <span style="color:#ffc45e;">proxy_pass</span>              db-pool;
+        <span style="color:#ffc45e;">proxy_connect_timeout</span>   1s;
+        <span style="color:#ffc45e;">proxy_timeout</span>           10m;
+        <span style="color:#ffc45e;">worker_shutdown_timeout</span> 60s; <span style="color:#1e3a5f;">// gracefulDelay</span>
+    }
+}
+
+<span style="color:#1e3a5f;">// wg.Wait() — both goroutines done, merge + atomic write ────</span>
+<span style="color:#7b61ff;">var</span> wg sync.WaitGroup
+wg.Add(<span style="color:#ffc45e;">2</span>)
+<span style="color:#ffc45e;">go</span> <span style="color:#7b61ff;">func</span>() { <span style="color:#ffc45e;">defer</span> wg.Done(); renderHTTP(&amp;httpBlock, c.HTTP) }()
+<span style="color:#ffc45e;">go</span> <span style="color:#7b61ff;">func</span>() { <span style="color:#ffc45e;">defer</span> wg.Done(); renderStream(&amp;streamBlock, c.Stream) }()
+wg.Wait()
+
+atomicWrite(nginxConfPath, merged) <span style="color:#1e3a5f;">// rename() — atomic</span>
+exec.Command(<span style="color:#7bdf8e;">"nginx"</span>, <span style="color:#7bdf8e;">"-t"</span>).Run()   <span style="color:#1e3a5f;">// validate first</span>
+exec.Command(<span style="color:#7bdf8e;">"nginx"</span>, <span style="color:#7bdf8e;">"-s"</span>, <span style="color:#7bdf8e;">"reload"</span>).Run()</pre>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Execution timeline -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:48px;margin-top:48px;">
+    <div>
+      <h3 style="font-family:'Bebas Neue',sans-serif;font-size:28px;color:var(--heading);letter-spacing:2px;margin-bottom:28px;">Execution Ownership</h3>
+      <div class="timeline">
+        <div class="tl-item">
+          <div class="tl-time">Step 01</div>
+          <div class="tl-title">POC — Happy Path First</div>
+          <div class="tl-desc">TCP/UDP Component → Go template → stream block → agent deploy → NGINX reload. Proved highest-risk paths before any squad investment.</div>
+          <div class="tl-tags"><span class="tl-tag">Go Templates</span><span class="tl-tag">NGINX stream</span></div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-time">Step 02</div>
+          <div class="tl-title">ERD + OpenAPI — Cross-Squad Review</div>
+          <div class="tl-desc">Invited Agent, Metrics, Frontend, DevOps, and QA architects. Async written feedback 48h before sync. Two iteration rounds.</div>
+          <div class="tl-tags"><span class="tl-tag">ERD Review</span><span class="tl-tag">OpenAPI</span></div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-time">Step 03</div>
+          <div class="tl-title">Jira Epics + Delegation</div>
+          <div class="tl-desc">Six epics with clear owners. Personally owned backend core. Delegated with 2hr pairing sessions per engineer before they started.</div>
+          <div class="tl-tags"><span class="tl-tag">Backend</span><span class="tl-tag">Frontend</span><span class="tl-tag">QA</span><span class="tl-tag">DevOps</span></div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-time">Step 04</div>
+          <div class="tl-title">Shipped — Deadline + Bonus</div>
+          <div class="tl-desc">On deadline: TCP/UDP pipeline end-to-end. Bonus: Metrics UI shipped in v1 (scoped to v2). PM exceeded expectations.</div>
+          <div class="tl-tags"><span class="tl-tag">On Time</span><span class="tl-tag">Exceeded Scope</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <h3 style="font-family:'Bebas Neue',sans-serif;font-size:28px;color:var(--heading);letter-spacing:2px;margin-bottom:28px;">Config Test Strategy</h3>
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <div class="solved-card">
+          <div class="solved-label">Layer 1</div>
+          <div class="solved-title">Snapshot-based template tests</div>
+          <div class="solved-desc">Every option combination renders to a stored golden <code>.conf</code> file. Template changes require explicit golden file update in PR.</div>
+        </div>
+        <div class="solved-card">
+          <div class="solved-label">Layer 2</div>
+          <div class="solved-title">NGINX syntax validation in CI</div>
+          <div class="solved-desc"><code>nginx -t -c &lt;golden_file&gt;</code> against every golden file. Catches valid Go output that is invalid NGINX scope/context.</div>
+        </div>
+        <div class="solved-card">
+          <div class="solved-label">Layer 3</div>
+          <div class="solved-title">Integration — real NGINX container</div>
+          <div class="solved-desc">Spins real NGINX with stream module. Asserts TCP connection is accepted and proxied to mock upstream. End-to-end proof.</div>
+        </div>
+        <div class="solved-card">
+          <div class="solved-label">Layer 4</div>
+          <div class="solved-title">Replay — multi-component scenarios</div>
+          <div class="solved-desc">Sequence of HTTP + TCP CRUD ops. Asserts combined <code>http{}</code> + <code>stream{}</code> config stays correct after every mutation.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ══════════════════ METRICS ══════════════════ -->
+<section id="metrics">
+  <div class="sec-header">
+    <div class="sec-tag">Metrics Pipeline</div>
+    <h2 class="sec-title">~1B Events/Day — Zero Regression</h2>
+    <p class="sec-desc">
+      Adding L4 introduced three concrete risks to an existing pipeline processing a billion metric points daily.
+      Each was identified early and designed around before any implementation started.
+    </p>
+  </div>
+
+  <div class="risk-row">
+    <div class="risk-card">
+      <div class="risk-label">Risk 01</div>
+      <div class="risk-title">Cardinality Explosion</div>
+      <div class="risk-desc">Operator-named stream server zones → unbounded Clickhouse dimensions → compression destroyed → GROUP BY queries exponentially slower.</div>
+    </div>
+    <div class="risk-card">
+      <div class="risk-label">Risk 02</div>
+      <div class="risk-title">Clickhouse Perf Degradation</div>
+      <div class="risk-desc">Adding wide columns to the hot metric table → HTTP dashboard query SLA broken → existing customers impacted before TCP/UDP customers gained anything.</div>
+    </div>
+    <div class="risk-card">
+      <div class="risk-label">Risk 03</div>
+      <div class="risk-title">Query Latency Regression</div>
+      <div class="risk-desc">JOIN-based schema approach → existing HTTP dashboards slow under TCP/UDP write load → latency regression without any new feature benefit.</div>
+    </div>
+  </div>
+
+  <div class="solved-row" style="grid-template-columns:1fr 1fr 1fr;margin-top:36px;">
+    <div class="solved-card">
+      <div class="solved-label">Solution — Schema</div>
+      <div class="solved-title">Nullable sparse columns</div>
+      <div class="solved-desc">Benchmarked 3 options. Nullable cols on existing table — only populated for stream events. Clickhouse columnar storage makes sparse nulls free. HTTP hot path unchanged.</div>
+    </div>
+    <div class="solved-card">
+      <div class="solved-label">Solution — Cardinality</div>
+      <div class="solved-title">5-layer guardrail system</div>
+      <div class="solved-desc">API cap → Receiver LRU guard → <code>__overflow__</code> dim instead of drop → alert at 80% cap → 7-day rollup MaterializedView (~60x storage reduction).</div>
+    </div>
+    <div class="solved-card">
+      <div class="solved-label">Solution — Receiver</div>
+      <div class="solved-title">Dual-path metric model</div>
+      <div class="solved-desc">Nullable <code>protocol</code> and <code>serverZone</code> fields added to base metric event. HTTP events never touch these fields. Stream events populate them. Zero breaking change.</div>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ══════════════════ IMPACT ══════════════════ -->
+<div class="impact-section" id="impact">
+  <div class="impact-inner">
+    <div class="sec-header">
+      <div class="sec-tag">Outcomes</div>
+      <h2 class="sec-title">Impact & Achievements</h2>
+      <p class="sec-desc">Delivered full L4 load balancing on deadline — with a metrics UI the PM wasn't expecting until v2.</p>
+    </div>
+
+    <div class="big-stats">
+      <div class="big-stat">
+        <span class="n">~1B</span>
+        <span class="l">Metrics/day redesigned at scale — zero HTTP regression</span>
+      </div>
+      <div class="big-stat">
+        <span class="n">9</span>
+        <span class="l">Components changed — API, templates, agent, AVRD, metrics, DB</span>
+      </div>
+      <div class="big-stat">
+        <span class="n">0</span>
+        <span class="l">Breaking changes to existing HTTP Component API contract</span>
+      </div>
+      <div class="big-stat">
+        <span class="n">V1</span>
+        <span class="l">Metrics UI shipped in first iteration — PM expected v2</span>
+      </div>
+    </div>
+
+    <div class="wins-grid">
+      <div class="win-card product">
+        <div class="win-category product">Product Capabilities</div>
+        <ul class="win-items">
+          <li>Expanded HTTP-only → full L4 load balancing</li>
+          <li>Preserved config generation SLA</li>
+          <li>Maintained metrics performance at ~1B/day</li>
+          <li>Avoided pipeline fragmentation</li>
+          <li>Delivered metrics UI visibility in v1</li>
+          <li>PM expectations exceeded</li>
+        </ul>
+      </div>
+      <div class="win-card tech">
+        <div class="win-category tech">Technical Wins</div>
+        <ul class="win-items">
+          <li>Created reusable concurrent renderer architecture</li>
+          <li>Identified highest-risk areas before large investment</li>
+          <li>Built POC proving correctness before squad commitment</li>
+          <li>Protected HTTP performance invariants at scale</li>
+          <li>Cardinality guardrails designed in from day one</li>
+          <li>Deterministic golden file config test suite</li>
+        </ul>
+      </div>
+      <div class="win-card lead">
+        <div class="win-category lead">Leadership Wins</div>
+        <ul class="win-items">
+          <li>Unified 5 squads around shared ERD + OpenAPI artifacts</li>
+          <li>Ran structured async-then-sync cross-squad design review</li>
+          <li>Updated schema based on review feedback (3 iterations)</li>
+          <li>Finalized API contract before implementation started</li>
+          <li>Reduced long-term operational cost via reusable renderer</li>
+          <li>Drove cross-functional execution to on-time delivery</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ══════════════════ ERD ══════════════════ -->
+<section id="erd">
+  <div class="sec-header">
+    <div class="sec-tag">Data Model</div>
+    <h2 class="sec-title">Metrics ERD — Schema Evolution</h2>
+    <p class="sec-desc">
+      New protocol-specific fields added as nullable columns — only materialized for stream events.
+      HTTP queries untouched. Clickhouse columnar storage makes sparse nulls essentially free at 1B events/day.
+    </p>
+  </div>
+
+  <div class="diagram-frame">
+    <div class="diagram-bar">
+      <div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div>
+      <span class="diagram-label">metrics-data-model / erd.schema — ★ = new fields added by this project</span>
+    </div>
+    <div class="diagram-body">
+      <div class="mermaid">
+erDiagram
+    NGINX_METRIC {
+        string  metric_name
+        bigint  timestamp
+        float   value
+        string  instance_id
+        string  component_type    "NEW: http or tcp or udp"
+        string  app_env_name      "NEW: app-centric dimension"
+        string  upstream_group    "NEW: tcp/udp upstream name"
+        string  server_zone       "NEW: stream server zone"
+        string  protocol          "NEW: tcp or udp, nullable"
+    }
+
+    COMPONENT_CONFIG {
+        string  component_id      PK
+        string  type              "http or tcp or udp"
+        string  listen_port
+        string  upstream_servers
+        json    protocol_options  "NEW: stream-specific settings"
+        string  health_check      "NEW: tcp/udp health check type"
+        string  app_env_id        FK
+    }
+
+    APP_ENVIRONMENT {
+        string  app_env_id        PK
+        string  name
+        string  instance_id       FK
+    }
+
+    NGINX_INSTANCE {
+        string  instance_id       PK
+        string  hostname
+        string  agent_version
+        string  nginx_version
+        bool    stream_enabled    "NEW: instance supports stream module"
+    }
+
+    NGINX_INSTANCE ||--o{ APP_ENVIRONMENT : "hosts"
+    APP_ENVIRONMENT ||--o{ COMPONENT_CONFIG : "owns"
+    COMPONENT_CONFIG ||--o{ NGINX_METRIC : "generates"
+      </div>
+    </div>
+  </div>
+
+  <!-- Schema decision -->
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-top:28px;">
+    <div style="background:rgba(255,77,106,0.06);border:1px solid rgba(255,77,106,0.2);border-radius:10px;padding:20px;">
+      <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--red);letter-spacing:2px;margin-bottom:10px;">REJECTED — Option A</div>
+      <div style="font-size:14px;font-weight:600;color:var(--heading);margin-bottom:6px;">Separate stream_metrics table</div>
+      <div style="font-size:12.5px;color:var(--muted);">JOIN cost at 1B/day unacceptable. HTTP dashboards would regress under write load from TCP/UDP events.</div>
+    </div>
+    <div style="background:rgba(255,77,106,0.06);border:1px solid rgba(255,77,106,0.2);border-radius:10px;padding:20px;">
+      <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--red);letter-spacing:2px;margin-bottom:10px;">REJECTED — Option B</div>
+      <div style="font-size:14px;font-weight:600;color:var(--heading);margin-bottom:6px;">Wide row — add all new cols</div>
+      <div style="font-size:12.5px;color:var(--muted);">Wider rows on the hot path risk HTTP query SLA regression. Benchmarks confirmed degradation at existing scale.</div>
+    </div>
+    <div style="background:rgba(0,229,160,0.06);border:1px solid rgba(0,229,160,0.25);border-radius:10px;padding:20px;">
+      <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--green);letter-spacing:2px;margin-bottom:10px;">SHIPPED — Option C ✓</div>
+      <div style="font-size:14px;font-weight:600;color:var(--heading);margin-bottom:6px;">Nullable sparse columns</div>
+      <div style="font-size:12.5px;color:var(--muted);">Clickhouse columnar storage makes sparse nulls free. HTTP events never touch new fields. Zero regression confirmed in load test.</div>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<footer>
+  <div style="margin-bottom:12px;">
+    <a href="https://chintamanil.github.io/">← All Projects</a>
+    &nbsp;·&nbsp;
+    <a href="https://chintamanil.github.io/cybershield/">CyberShield AI Platform</a>
+  </div>
+  NGINX Controller · TCP/UDP Pipeline · Staff Engineering
+</footer>
+
+<script>
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'dark',
+  themeVariables: {
+    primaryColor: '#0f2340',
+    primaryTextColor: '#dce6f5',
+    primaryBorderColor: '#1e4d8c',
+    lineColor: '#2a4060',
+    secondaryColor: '#053a22',
+    tertiaryColor: '#1a1040',
+    background: '#0d1420',
+    mainBkg: '#0d1420',
+    nodeBorder: '#1e4d8c',
+    clusterBkg: '#060910',
+    clusterBorder: '#162033',
+    titleColor: '#f0f6ff',
+    edgeLabelBackground: '#0d1420',
+    actorBkg: '#0f2340',
+    actorBorder: '#1e4d8c',
+    actorTextColor: '#dce6f5',
+    signalColor: '#4a6080',
+    labelBoxBkgColor: '#0d1420',
+    labelBoxBorderColor: '#1e4d8c',
+    labelTextColor: '#dce6f5',
+    noteBkgColor: '#100e0a',
+    noteTextColor: '#dce6f5',
+    fontFamily: 'DM Mono, monospace',
+    fontSize: '13px',
+  },
+  er: {
+    diagramPadding: 24,
+    layoutDirection: 'TB',
+    minEntityWidth: 120,
+    minEntityHeight: 80,
+    entityPadding: 16,
+    useMaxWidth: true,
+  },
+  flowchart: {
+    htmlLabels: true,
+    curve: 'basis',
+    padding: 20,
+  }
+});
+
+// Scroll-based fade-in for sections
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      e.target.style.opacity = '1';
+      e.target.style.transform = 'translateY(0)';
+    }
+  });
+}, { threshold: 0.1 });
+
+document.querySelectorAll('section, .impact-section').forEach(el => {
+  el.style.opacity = '0';
+  el.style.transform = 'translateY(20px)';
+  el.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
+  observer.observe(el);
+});
+</script>
+</body>
+</html>
