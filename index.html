@@ -785,9 +785,8 @@ flowchart TB
     <div class="sec-tag">Config Pipeline</div>
     <h2 class="sec-title">Concurrent Config Generation</h2>
     <p class="sec-desc">
-      Two Go goroutines render HTTP and stream blocks in parallel,
-      merged into a single atomic write — preserving config deployment SLA
-      while adding a full new protocol family.
+      An OpenAPI model exposes App Environments and Components (HTTP, TCP, UDP) as first-class resources — customers declare desired state without knowing anything about nginx.conf syntax. That desired state is then processed concurrently.<br>
+      Two Go goroutines render HTTP and stream blocks in parallel, merged into a single atomic write — preserving config deployment SLA while adding a full new protocol family.
     </p>
   </div>
 
@@ -1232,7 +1231,8 @@ sequenceDiagram
     <div class="sec-tag">Data Model</div>
     <h2 class="sec-title">Schema Evolution — Two Storage Systems</h2>
     <p class="sec-desc">
-      PostgreSQL owns relational metadata (instances, environments, component config). Clickhouse owns time-series metrics — the key addition was the <code>family</code> dimension (<code>web</code> vs <code>tcp-udp</code>) as the stream discriminator, plus two genuinely new nullable sparse columns (<code>upstream_group</code>, <code>server_zone</code>) for stream-specific dims. Existing dims like <code>component_name</code>, <code>app_name</code>, <code>proxied_protocol</code> were already in the catalog — extended to carry TCP/UDP values, not added as new columns.
+      <strong style="color:var(--heading);font-weight:700;">PostgreSQL</strong> owns relational metadata (instances, environments, component config).<br>
+      <strong style="color:var(--heading);font-weight:700;">Clickhouse</strong> owns time-series metrics — the key addition was the <code>family</code> dimension (<code>web</code> vs <code>tcp-udp</code>) as the stream discriminator, plus two genuinely new nullable sparse columns (<code>upstream_group</code>, <code>server_zone</code>) for stream-specific dims. Existing dims like <code>component_name</code>, <code>app_name</code>, <code>proxied_protocol</code> were already in the catalog — extended to carry TCP/UDP values, not added as new columns.
     </p>
   </div>
 
@@ -1349,8 +1349,6 @@ erDiagram
 
 <footer>
   <div style="margin-bottom:12px;">
-    <a href="https://chintamanil.github.io/">← All Projects</a>
-    &nbsp;·&nbsp;
     <a href="https://chintamanil.github.io/cybershield/">CyberShield AI Platform</a>
   </div>
   NGINX Controller · TCP/UDP Pipeline · Staff Engineering
