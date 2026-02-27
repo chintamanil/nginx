@@ -573,6 +573,7 @@ footer a { color: var(--accent); text-decoration: none; }
     <li><a href="#config">Config Pipeline</a></li>
     <li><a href="#metrics">Metrics</a></li>
     <li><a href="#impact">Impact</a></li>
+    <li><a href="#workflow">Workflow</a></li>
     <li><a href="#erd">Data Model</a></li>
   </ul>
 </nav>
@@ -1088,6 +1089,122 @@ exec.Command(<span style="color:#7bdf8e;">"nginx"</span>, <span style="color:#7b
     </div>
   </div>
 </div>
+
+<hr class="divider">
+
+<!-- ══════════════════ WORKFLOW ══════════════════ -->
+<section id="workflow">
+  <div class="sec-header">
+    <div class="sec-tag">Engineering Process</div>
+    <h2 class="sec-title">Engineering Workflow & Ownership Map</h2>
+    <p class="sec-desc">
+      From abstract PM requirements to production delivery — how the project was structured,
+      who owned what, and how cross-functional alignment was achieved before implementation started.
+    </p>
+  </div>
+
+  <div class="diagram-frame">
+    <div class="diagram-bar">
+      <div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div>
+      <span class="diagram-label">engineering-workflow / ownership-map.seq</span>
+    </div>
+    <div class="diagram-body" style="padding:24px 16px;">
+      <div class="mermaid">
+sequenceDiagram
+    autonumber
+    participant PM as PM
+    participant SE as Staff Engineer
+    participant ARCH as Architects
+    participant BE as Backend Squad
+    participant FE as Frontend Squad
+    participant QA as QA Squad
+    participant OPS as DevOps
+
+    PM->>SE: Abstract PRD: support NGINX stream module
+
+    Note over SE: Discovery phase
+    SE->>SE: Deep-dive NGINX stream docs
+    SE->>SE: Map 4 affected systems
+    SE->>SE: Identify highest-risk paths
+
+    Note over SE: POC phase
+    SE->>SE: Build POC: Component to nginx.conf to agent deploy
+    SE->>SE: Prove concurrent goroutine rendering
+    SE->>SE: Validate AVRD stream metric collection
+
+    Note over SE,ARCH: Design review — async first
+    SE->>ARCH: Share ERD + POC code + draft OpenAPI (48h ahead)
+    ARCH-->>SE: Written feedback: graceful drain, schema options, cardinality
+
+    Note over SE,ARCH: Design review — sync
+    SE->>ARCH: Run structured design review session
+    ARCH-->>SE: Schema decision: nullable cols over separate table
+    ARCH-->>SE: Add gracefulDelay for long-lived TCP connections
+    SE->>SE: Iterate design (3 rounds), finalize API contract
+
+    SE->>PM: Sign off on finalized API contract
+
+    Note over SE,OPS: Execution phase
+    SE->>BE: Assign Receiver + Clickhouse migration (2hr pairing session each)
+    SE->>FE: Define UI flow + component form spec
+    SE->>QA: Deliver golden file test matrix before implementation
+    SE->>OPS: Define feature flag strategy for agent rollout
+
+    Note over SE: Personally owned
+    SE->>SE: TCP/UDP Component CRUD endpoints
+    SE->>SE: Concurrent Go template engine rewrite
+    SE->>SE: Agent protocol updates for stream config + metrics
+
+    BE-->>SE: Receiver + schema migration complete
+    FE-->>SE: Stream metrics UI complete (scoped to v2)
+    QA-->>SE: All golden file tests passing
+    OPS-->>SE: Agent rollout plan approved
+
+    SE->>PM: Shipped on deadline — TCP/UDP pipeline end-to-end
+    SE->>PM: Bonus: stream metrics UI included in v1
+      </div>
+    </div>
+  </div>
+
+  <!-- Ownership breakdown cards -->
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-top:28px;">
+
+    <div style="background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent);border-radius:10px;padding:22px;">
+      <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--accent);letter-spacing:2px;margin-bottom:14px;text-transform:uppercase;">Staff Engineer — Personally Owned</div>
+      <ul style="list-style:none;display:flex;flex-direction:column;gap:8px;">
+        <li style="font-size:13px;color:#8ba4c4;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--accent);margin-top:1px;">→</span>TCP/UDP Component CRUD API</li>
+        <li style="font-size:13px;color:#8ba4c4;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--accent);margin-top:1px;">→</span>Concurrent Go template engine rewrite</li>
+        <li style="font-size:13px;color:#8ba4c4;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--accent);margin-top:1px;">→</span>Agent stream config + metrics updates</li>
+        <li style="font-size:13px;color:#8ba4c4;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--accent);margin-top:1px;">→</span>Cross-squad design review facilitation</li>
+        <li style="font-size:13px;color:#8ba4c4;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--accent);margin-top:1px;">→</span>API contract + ERD finalization</li>
+        <li style="font-size:13px;color:#8ba4c4;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--accent);margin-top:1px;">→</span>Golden file test strategy</li>
+      </ul>
+    </div>
+
+    <div style="background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent2);border-radius:10px;padding:22px;">
+      <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--accent2);letter-spacing:2px;margin-bottom:14px;text-transform:uppercase;">Delegated — With Clear Contracts</div>
+      <ul style="list-style:none;display:flex;flex-direction:column;gap:8px;">
+        <li style="font-size:13px;color:#8ba4c4;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--accent2);margin-top:1px;">→</span><span><strong style="color:var(--text);">Backend:</strong> Receiver data model + Clickhouse schema migration</span></li>
+        <li style="font-size:13px;color:#8ba4c4;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--accent2);margin-top:1px;">→</span><span><strong style="color:var(--text);">Frontend:</strong> Stream metrics UI per defined spec</span></li>
+        <li style="font-size:13px;color:#8ba4c4;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--accent2);margin-top:1px;">→</span><span><strong style="color:var(--text);">QA:</strong> Test matrix against golden .conf files</span></li>
+        <li style="font-size:13px;color:#8ba4c4;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--accent2);margin-top:1px;">→</span><span><strong style="color:var(--text);">DevOps:</strong> Agent rollout via stream_enabled feature flag</span></li>
+      </ul>
+    </div>
+
+    <div style="background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--green);border-radius:10px;padding:22px;">
+      <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--green);letter-spacing:2px;margin-bottom:14px;text-transform:uppercase;">Alignment Artifacts Produced</div>
+      <ul style="list-style:none;display:flex;flex-direction:column;gap:8px;">
+        <li style="font-size:13px;color:#8ba4c4;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--green);margin-top:1px;">✓</span>POC (Go template + agent deploy + AVRD collection)</li>
+        <li style="font-size:13px;color:#8ba4c4;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--green);margin-top:1px;">✓</span>ERD — shared 48h before design review</li>
+        <li style="font-size:13px;color:#8ba4c4;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--green);margin-top:1px;">✓</span>OpenAPI contract — signed off by PM + architects</li>
+        <li style="font-size:13px;color:#8ba4c4;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--green);margin-top:1px;">✓</span>Frontend UI flow spec</li>
+        <li style="font-size:13px;color:#8ba4c4;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--green);margin-top:1px;">✓</span>QA golden file test matrix</li>
+        <li style="font-size:13px;color:#8ba4c4;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--green);margin-top:1px;">✓</span>6 Jira epics with clear acceptance criteria</li>
+      </ul>
+    </div>
+
+  </div>
+</section>
 
 <hr class="divider">
 
