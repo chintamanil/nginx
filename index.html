@@ -466,13 +466,17 @@ section {
 }
 
 /* ── ARCH GRID DIAGRAM SIZE ── */
-.arch-grid .mermaid svg {
-  transform: scale(1.2);
-  transform-origin: top center;
-}
 .arch-grid .diagram-body {
-  overflow: visible;
-  padding-bottom: 40px !important;
+  padding: 20px 16px 28px !important;
+  min-height: 520px;
+}
+.arch-grid .mermaid {
+  width: 100%;
+}
+.arch-grid .mermaid svg {
+  max-width: 100% !important;
+  width: 100% !important;
+  height: auto !important;
 }
 
 /* ── RISK TABLE ── */
@@ -632,7 +636,7 @@ footer a { color: var(--accent); text-decoration: none; }
 <hr class="divider">
 
 <!-- ══════════════════ ARCHITECTURE ══════════════════ -->
-<section id="architecture" style="max-width:1440px;">
+<section id="architecture" style="max-width:100%;padding-left:32px;padding-right:32px;">
   <div class="sec-header">
     <div class="sec-tag">System Design</div>
     <h2 class="sec-title">Architecture — Before & After</h2>
@@ -643,7 +647,7 @@ footer a { color: var(--accent); text-decoration: none; }
   </div>
 
   <!-- Side-by-side Before / After -->
-  <div class="arch-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;max-width:1440px;margin:0 auto;">
+  <div class="arch-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start;max-width:100%;">
 
     <!-- BEFORE -->
     <div>
@@ -1359,6 +1363,7 @@ mermaid.initialize({
     htmlLabels: true,
     curve: 'basis',
     padding: 20,
+    useMaxWidth: true,
   }
 });
 
