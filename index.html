@@ -1144,11 +1144,11 @@ sequenceDiagram
 
     Note over SE: Discovery phase
     SE->>SE: Deep-dive NGINX stream docs
-    SE->>SE: Map 4 affected systems
-    SE->>SE: Identify highest-risk paths
+    SE->>SE: Map 9 affected systems
+    SE->>SE: Identify highest-risk paths for POC
 
     Note over SE: POC phase
-    SE->>SE: Build POC: Component to nginx.conf to agent deploy
+    SE->>SE: Build POC: Component to TCP/UDP Template to Agent deploy to nginx.conf
     SE->>SE: Prove concurrent goroutine rendering
     SE->>SE: Validate AVRD stream metric collection
 
