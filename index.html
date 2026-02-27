@@ -1232,62 +1232,98 @@ sequenceDiagram
 <section id="erd">
   <div class="sec-header">
     <div class="sec-tag">Data Model</div>
-    <h2 class="sec-title">Metrics ERD — Schema Evolution</h2>
+    <h2 class="sec-title">Schema Evolution — Two Storage Systems</h2>
     <p class="sec-desc">
-      New protocol-specific fields added as nullable columns — only materialized for stream events.
-      HTTP queries untouched. Clickhouse columnar storage makes sparse nulls essentially free at 1B events/day.
+      PostgreSQL owns relational metadata (instances, environments, component config). Clickhouse owns time-series metrics — new TCP/UDP fields added as nullable sparse columns, HTTP hot path untouched at ~1B events/day.
     </p>
   </div>
 
-  <div class="diagram-frame">
-    <div class="diagram-bar">
-      <div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div>
-      <span class="diagram-label">metrics-data-model / erd.schema — ★ = new fields added by this project</span>
-    </div>
-    <div class="diagram-body">
-      <div class="mermaid">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;">
+
+    <!-- LEFT: PostgreSQL -->
+    <div>
+      <div class="state-label after" style="margin-bottom:12px;background:rgba(123,97,255,0.08);border-color:rgba(123,97,255,0.3);color:#c4b5fd;">PostgreSQL — Relational Metadata</div>
+      <div class="diagram-frame" style="border-color:rgba(123,97,255,0.25);">
+        <div class="diagram-bar">
+          <div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div>
+          <span class="diagram-label">postgresql / schema — green = new fields</span>
+        </div>
+        <div class="diagram-body" style="padding:20px 12px;">
+          <div class="mermaid">
 erDiagram
-    NGINX_METRIC {
-        string  metric_name
-        bigint  timestamp
-        float   value
-        string  instance_id
-        string  component_type    "NEW: http or tcp or udp"
-        string  app_env_name      "NEW: app-centric dimension"
-        string  upstream_group    "NEW: tcp/udp upstream name"
-        string  server_zone       "NEW: stream server zone"
-        string  protocol          "NEW: tcp or udp, nullable"
+    NGINX_INSTANCE {
+        string  instance_id    PK
+        string  hostname
+        string  agent_version
+        string  nginx_version
+        bool    stream_enabled "NEW: stream module enabled"
+    }
+
+    APP_ENVIRONMENT {
+        string  app_env_id     PK
+        string  name
+        string  instance_id    FK
     }
 
     COMPONENT_CONFIG {
         string  component_id      PK
-        string  type              "http or tcp or udp"
-        string  listen_port
+        string  type              "NEW: http or tcp or udp"
+        string  listen_port       "NEW: TCP/UDP listen port"
         string  upstream_servers
         json    protocol_options  "NEW: stream-specific settings"
         string  health_check      "NEW: tcp/udp health check type"
+        int     graceful_delay    "NEW: drain timeout seconds"
         string  app_env_id        FK
-    }
-
-    APP_ENVIRONMENT {
-        string  app_env_id        PK
-        string  name
-        string  instance_id       FK
-    }
-
-    NGINX_INSTANCE {
-        string  instance_id       PK
-        string  hostname
-        string  agent_version
-        string  nginx_version
-        bool    stream_enabled    "NEW: instance supports stream module"
     }
 
     NGINX_INSTANCE ||--o{ APP_ENVIRONMENT : "hosts"
     APP_ENVIRONMENT ||--o{ COMPONENT_CONFIG : "owns"
-    COMPONENT_CONFIG ||--o{ NGINX_METRIC : "generates"
+          </div>
+        </div>
       </div>
     </div>
+
+    <!-- RIGHT: Clickhouse -->
+    <div>
+      <div class="state-label after" style="margin-bottom:12px;">Clickhouse — Time-Series Metrics</div>
+      <div class="diagram-frame" style="border-color:rgba(0,229,160,0.2);">
+        <div class="diagram-bar">
+          <div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div>
+          <span class="diagram-label">clickhouse / nginx_metric — green = new nullable columns</span>
+        </div>
+        <div class="diagram-body" style="padding:20px 12px;">
+          <div class="mermaid">
+erDiagram
+    NGINX_METRIC {
+        string   metric_name
+        bigint   timestamp
+        float    value
+        string   instance_id
+        string   app_env_id
+        string   component_id
+        string   component_type  "NEW: http or tcp or udp"
+        string   app_env_name    "NEW: app-centric dimension"
+        string   upstream_group  "NEW: nullable, tcp/udp only"
+        string   server_zone     "NEW: nullable, stream zone"
+        string   protocol        "NEW: nullable, tcp or udp"
+    }
+
+    NGINX_METRIC_ROLLUP {
+        string   metric_name
+        bigint   timestamp_minute
+        float    value_avg
+        float    value_max
+        string   component_type
+        string   protocol        "NEW: nullable"
+        string   upstream_group  "NEW: nullable"
+    }
+
+    NGINX_METRIC ||--o{ NGINX_METRIC_ROLLUP : "aggregated into"
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div>
 
   <!-- Schema decision -->
