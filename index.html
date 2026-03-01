@@ -592,10 +592,10 @@ footer a { color: var(--accent); text-decoration: none; }
   <ul class="nav-links">
     <li><a href="#architecture">Architecture</a></li>
     <li><a href="#config">Config Pipeline</a></li>
+    <li><a href="#erd">Data Model</a></li>
     <li><a href="#metrics">Metrics</a></li>
     <li><a href="#impact">Impact</a></li>
     <li><a href="#workflow">Workflow</a></li>
-    <li><a href="#erd">Data Model</a></li>
     <li><a href="#references">References</a></li>
   </ul>
 </nav>
@@ -1022,6 +1022,128 @@ exec.Command(<span style="color:#7bdf8e;">"nginx"</span>, <span style="color:#7b
 
 <hr class="divider">
 
+<!-- ══════════════════ ERD ══════════════════ -->
+<section id="erd">
+  <div class="sec-header">
+    <div class="sec-tag">Data Model</div>
+    <h2 class="sec-title">Schema Evolution — Two Storage Systems</h2>
+    <p class="sec-desc">
+      <strong style="color:var(--heading);font-weight:700;">PostgreSQL</strong> owns relational metadata (instances, environments, component config).<br>
+      <strong style="color:var(--heading);font-weight:700;">Clickhouse</strong> owns time-series metrics — the key addition was the <code>family</code> dimension (<code>web</code> vs <code>tcp-udp</code>) as the stream discriminator, plus two genuinely new nullable sparse columns (<code>upstream_group</code>, <code>server_zone</code>) for stream-specific dims. Existing dims like <code>component_name</code>, <code>app_name</code>, <code>proxied_protocol</code> were already in the catalog — extended to carry TCP/UDP values, not added as new columns.
+    </p>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;">
+
+    <!-- LEFT: PostgreSQL -->
+    <div>
+      <div class="state-label after" style="margin-bottom:12px;background:rgba(123,97,255,0.08);border-color:rgba(123,97,255,0.3);color:#c4b5fd;">PostgreSQL — Relational Metadata</div>
+      <div class="diagram-frame" style="border-color:rgba(123,97,255,0.25);">
+        <div class="diagram-bar">
+          <div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div>
+          <span class="diagram-label">postgresql / schema — green = new fields</span>
+        </div>
+        <div class="diagram-body" style="padding:20px 12px;">
+          <div class="mermaid">
+erDiagram
+    NGINX_INSTANCE {
+        string  instance_id    PK
+        string  hostname
+        string  agent_version
+        string  nginx_version
+        bool    stream_enabled "NEW: stream module enabled"
+    }
+
+    APP_ENVIRONMENT {
+        string  app_env_id     PK
+        string  name
+        string  instance_id    FK
+    }
+
+    COMPONENT_CONFIG {
+        string  component_id      PK
+        string  family            "NEW: web or tcp-udp — matches Clickhouse dim"
+        string  type              "NEW: http or tcp or udp"
+        string  listen_port       "NEW: TCP/UDP listen port"
+        string  upstream_servers
+        json    protocol_options  "NEW: stream-specific settings"
+        string  health_check      "NEW: tcp/udp health check type"
+        int     graceful_delay    "NEW: drain timeout seconds"
+        string  app_env_id        FK
+    }
+
+    NGINX_INSTANCE ||--o{ APP_ENVIRONMENT : "hosts"
+    APP_ENVIRONMENT ||--o{ COMPONENT_CONFIG : "owns"
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: Clickhouse -->
+    <div>
+      <div class="state-label after" style="margin-bottom:12px;">Clickhouse — Time-Series Metrics</div>
+      <div class="diagram-frame" style="border-color:rgba(0,229,160,0.2);">
+        <div class="diagram-bar">
+          <div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div>
+          <span class="diagram-label">clickhouse / nginx_metric — green = new nullable columns</span>
+        </div>
+        <div class="diagram-body" style="padding:20px 12px;">
+          <div class="mermaid">
+erDiagram
+    NGINX_METRIC {
+        string   metric_name
+        bigint   timestamp
+        float    value
+        string   instance_id
+        string   app_name
+        string   component_name
+        string   environment_name
+        string   proxied_protocol
+        string   family           "NEW: web or tcp-udp — stream discriminator"
+        string   upstream_group   "NEW: nullable, tcp/udp upstream name"
+        string   server_zone      "NEW: nullable, stream server zone"
+    }
+
+    NGINX_METRIC_ROLLUP {
+        string   metric_name
+        bigint   timestamp_minute
+        float    value_avg
+        float    value_max
+        string   family           "NEW: web or tcp-udp"
+        string   upstream_group   "NEW: nullable"
+        string   server_zone      "NEW: nullable"
+    }
+
+    NGINX_METRIC ||--o{ NGINX_METRIC_ROLLUP : "aggregated into"
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Schema decision -->
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-top:28px;">
+    <div style="background:rgba(255,77,106,0.06);border:1px solid rgba(255,77,106,0.2);border-radius:10px;padding:20px;">
+      <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--red);letter-spacing:2px;margin-bottom:10px;">REJECTED — Option A</div>
+      <div style="font-size:14px;font-weight:600;color:var(--heading);margin-bottom:6px;">Separate stream_metrics table</div>
+      <div style="font-size:12.5px;color:var(--muted);">JOIN cost at 1B/day unacceptable. Existing metrics like <code>client.network.latency.max</code> already emit for both HTTP and stream — splitting tables would fragment a unified pipeline.</div>
+    </div>
+    <div style="background:rgba(255,77,106,0.06);border:1px solid rgba(255,77,106,0.2);border-radius:10px;padding:20px;">
+      <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--red);letter-spacing:2px;margin-bottom:10px;">REJECTED — Option B</div>
+      <div style="font-size:14px;font-weight:600;color:var(--heading);margin-bottom:6px;">Duplicate existing dims as typed columns</div>
+      <div style="font-size:12.5px;color:var(--muted);">Adding typed copies of <code>component_name</code>, <code>app_name</code>, <code>proxied_protocol</code> as new columns would widen every HTTP row unnecessarily. Benchmarks confirmed SLA regression at existing write volume.</div>
+    </div>
+    <div style="background:rgba(0,229,160,0.06);border:1px solid rgba(0,229,160,0.25);border-radius:10px;padding:20px;">
+      <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--green);letter-spacing:2px;margin-bottom:10px;">SHIPPED — Option C ✓</div>
+      <div style="font-size:14px;font-weight:600;color:var(--heading);margin-bottom:6px;">family dim + 2 nullable sparse columns</div>
+      <div style="font-size:12.5px;color:var(--muted);"><code>family=tcp-udp</code> as stream discriminator. Only <code>upstream_group</code> and <code>server_zone</code> added as truly new nullable columns — no HTTP equivalent. Clickhouse columnar storage makes sparse nulls free. Zero regression confirmed in load test.</div>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
 <!-- ══════════════════ METRICS ══════════════════ -->
 <section id="metrics">
   <div class="sec-header">
@@ -1251,128 +1373,6 @@ sequenceDiagram
       </ul>
     </div>
 
-  </div>
-</section>
-
-<hr class="divider">
-
-<!-- ══════════════════ ERD ══════════════════ -->
-<section id="erd">
-  <div class="sec-header">
-    <div class="sec-tag">Data Model</div>
-    <h2 class="sec-title">Schema Evolution — Two Storage Systems</h2>
-    <p class="sec-desc">
-      <strong style="color:var(--heading);font-weight:700;">PostgreSQL</strong> owns relational metadata (instances, environments, component config).<br>
-      <strong style="color:var(--heading);font-weight:700;">Clickhouse</strong> owns time-series metrics — the key addition was the <code>family</code> dimension (<code>web</code> vs <code>tcp-udp</code>) as the stream discriminator, plus two genuinely new nullable sparse columns (<code>upstream_group</code>, <code>server_zone</code>) for stream-specific dims. Existing dims like <code>component_name</code>, <code>app_name</code>, <code>proxied_protocol</code> were already in the catalog — extended to carry TCP/UDP values, not added as new columns.
-    </p>
-  </div>
-
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;">
-
-    <!-- LEFT: PostgreSQL -->
-    <div>
-      <div class="state-label after" style="margin-bottom:12px;background:rgba(123,97,255,0.08);border-color:rgba(123,97,255,0.3);color:#c4b5fd;">PostgreSQL — Relational Metadata</div>
-      <div class="diagram-frame" style="border-color:rgba(123,97,255,0.25);">
-        <div class="diagram-bar">
-          <div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div>
-          <span class="diagram-label">postgresql / schema — green = new fields</span>
-        </div>
-        <div class="diagram-body" style="padding:20px 12px;">
-          <div class="mermaid">
-erDiagram
-    NGINX_INSTANCE {
-        string  instance_id    PK
-        string  hostname
-        string  agent_version
-        string  nginx_version
-        bool    stream_enabled "NEW: stream module enabled"
-    }
-
-    APP_ENVIRONMENT {
-        string  app_env_id     PK
-        string  name
-        string  instance_id    FK
-    }
-
-    COMPONENT_CONFIG {
-        string  component_id      PK
-        string  family            "NEW: web or tcp-udp — matches Clickhouse dim"
-        string  type              "NEW: http or tcp or udp"
-        string  listen_port       "NEW: TCP/UDP listen port"
-        string  upstream_servers
-        json    protocol_options  "NEW: stream-specific settings"
-        string  health_check      "NEW: tcp/udp health check type"
-        int     graceful_delay    "NEW: drain timeout seconds"
-        string  app_env_id        FK
-    }
-
-    NGINX_INSTANCE ||--o{ APP_ENVIRONMENT : "hosts"
-    APP_ENVIRONMENT ||--o{ COMPONENT_CONFIG : "owns"
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- RIGHT: Clickhouse -->
-    <div>
-      <div class="state-label after" style="margin-bottom:12px;">Clickhouse — Time-Series Metrics</div>
-      <div class="diagram-frame" style="border-color:rgba(0,229,160,0.2);">
-        <div class="diagram-bar">
-          <div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div>
-          <span class="diagram-label">clickhouse / nginx_metric — green = new nullable columns</span>
-        </div>
-        <div class="diagram-body" style="padding:20px 12px;">
-          <div class="mermaid">
-erDiagram
-    NGINX_METRIC {
-        string   metric_name
-        bigint   timestamp
-        float    value
-        string   instance_id
-        string   app_name
-        string   component_name
-        string   environment_name
-        string   proxied_protocol
-        string   family           "NEW: web or tcp-udp — stream discriminator"
-        string   upstream_group   "NEW: nullable, tcp/udp upstream name"
-        string   server_zone      "NEW: nullable, stream server zone"
-    }
-
-    NGINX_METRIC_ROLLUP {
-        string   metric_name
-        bigint   timestamp_minute
-        float    value_avg
-        float    value_max
-        string   family           "NEW: web or tcp-udp"
-        string   upstream_group   "NEW: nullable"
-        string   server_zone      "NEW: nullable"
-    }
-
-    NGINX_METRIC ||--o{ NGINX_METRIC_ROLLUP : "aggregated into"
-          </div>
-        </div>
-      </div>
-    </div>
-
-  </div>
-
-  <!-- Schema decision -->
-  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-top:28px;">
-    <div style="background:rgba(255,77,106,0.06);border:1px solid rgba(255,77,106,0.2);border-radius:10px;padding:20px;">
-      <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--red);letter-spacing:2px;margin-bottom:10px;">REJECTED — Option A</div>
-      <div style="font-size:14px;font-weight:600;color:var(--heading);margin-bottom:6px;">Separate stream_metrics table</div>
-      <div style="font-size:12.5px;color:var(--muted);">JOIN cost at 1B/day unacceptable. Existing metrics like <code>client.network.latency.max</code> already emit for both HTTP and stream — splitting tables would fragment a unified pipeline.</div>
-    </div>
-    <div style="background:rgba(255,77,106,0.06);border:1px solid rgba(255,77,106,0.2);border-radius:10px;padding:20px;">
-      <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--red);letter-spacing:2px;margin-bottom:10px;">REJECTED — Option B</div>
-      <div style="font-size:14px;font-weight:600;color:var(--heading);margin-bottom:6px;">Duplicate existing dims as typed columns</div>
-      <div style="font-size:12.5px;color:var(--muted);">Adding typed copies of <code>component_name</code>, <code>app_name</code>, <code>proxied_protocol</code> as new columns would widen every HTTP row unnecessarily. Benchmarks confirmed SLA regression at existing write volume.</div>
-    </div>
-    <div style="background:rgba(0,229,160,0.06);border:1px solid rgba(0,229,160,0.25);border-radius:10px;padding:20px;">
-      <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--green);letter-spacing:2px;margin-bottom:10px;">SHIPPED — Option C ✓</div>
-      <div style="font-size:14px;font-weight:600;color:var(--heading);margin-bottom:6px;">family dim + 2 nullable sparse columns</div>
-      <div style="font-size:12.5px;color:var(--muted);"><code>family=tcp-udp</code> as stream discriminator. Only <code>upstream_group</code> and <code>server_zone</code> added as truly new nullable columns — no HTTP equivalent. Clickhouse columnar storage makes sparse nulls free. Zero regression confirmed in load test.</div>
-    </div>
   </div>
 </section>
 
