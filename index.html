@@ -663,6 +663,7 @@ flowchart TB
     classDef agent    fill:#0a0a20,stroke:#3a3a8c,color:#a5b4fc
     classDef store    fill:#100e0a,stroke:#4a3a28,color:#d4c4a8
     classDef missing  fill:#2a0a10,stroke:#ef4444,color:#fca5a5,stroke-dasharray:6 3
+    classDef infobox  fill:#080f1e,stroke:#1e3a60,color:#6b8fb5
 
     subgraph CTRL["Controller"]
         direction TB
@@ -671,6 +672,28 @@ flowchart TB
         TMPL["Go Template Engine\nHTTP sequential"]:::existing
         GAP1["GAP: No TCP/UDP Component\nCannot provision L4"]:::missing
         NRP --> EXT --> TMPL
+    end
+
+    subgraph HIER["API Object Hierarchy — HTTP Only"]
+        direction TB
+        OH1["Gateway\nbinds instance + listen port"]:::infobox
+        OH2["Environment\nPROD / STAGING namespace"]:::infobox
+        OH3["App\nlogical service grouping"]:::infobox
+        OH4["Component\nHTTP ingress + backend\none nginx server block"]:::infobox
+        OH1 --> OH2 --> OH3 --> OH4
+    end
+
+    CTRL ~~~ HIER
+
+    subgraph DP["Data Plane Host"]
+        direction TB
+        AGT["Agent\nHTTP config only"]:::existing
+        AVRD["AVRD\nHTTP metrics only"]:::agent
+        NGX["NGINX\nHTTP LB only"]:::agent
+        GAP3["GAP: No stream block\nTCP/UDP not handled"]:::missing
+        AGT --> NGX
+        NGX -->|http metrics| AVRD
+        AVRD --> AGT
     end
 
     subgraph MSG["NATS Streaming"]
@@ -688,20 +711,10 @@ flowchart TB
     subgraph STORE["Storage"]
         CH["Clickhouse\nHTTP dims only"]:::existing
         PG["PostgreSQL"]:::store
-        DBFW --> CH
-        DBFW --> PG
     end
 
-    subgraph DP["Data Plane Host"]
-        direction TB
-        AGT["Agent\nHTTP config only"]:::existing
-        AVRD["AVRD\nHTTP metrics only"]:::agent
-        NGX["NGINX\nHTTP LB only"]:::agent
-        GAP3["GAP: No stream block\nTCP/UDP not handled"]:::missing
-        AGT --> NGX
-        NGX -->|http metrics| AVRD
-        AVRD --> AGT
-    end
+    DBFW --> CH
+    DBFW --> PG
 
     TMPL -->|http only| AGT
     AGT -->|http metrics| RECV
@@ -726,6 +739,7 @@ flowchart TB
     classDef infra    fill:#1a1040,stroke:#4c3a9e,color:#c4b5fd
     classDef agent    fill:#0a0a20,stroke:#3a3a8c,color:#a5b4fc
     classDef store    fill:#100e0a,stroke:#4a3a28,color:#d4c4a8
+    classDef infobox  fill:#03200f,stroke:#00e5a0,color:#6effd4,stroke-width:1px
 
     subgraph CTRL["Controller"]
         direction TB
@@ -734,6 +748,30 @@ flowchart TB
         TMPL["Go Template Engine\nConcurrent goroutines\nHTTP + stream parallel\natomic write"]:::newc
         GAP1["TCP/UDP Component\nstreamIngress + streamBackend\nhealth checks, timeouts"]:::newc
         NRP --> EXT --> TMPL
+    end
+
+    subgraph HIER["API Object Hierarchy — Extended for TCP/UDP"]
+        direction TB
+        OH1["Gateway — unchanged\nbinds instance + listen port"]:::existing
+        OH2["Environment — unchanged\nPROD / STAGING namespace"]:::existing
+        OH3["App — now hosts HTTP AND TCP/UDP Components"]:::infobox
+        OH4["HTTP Component\ningress + backend\nrenders http block"]:::existing
+        OH5["TCP/UDP Component NEW\nstreamIngress + streamBackend\nrenders stream block"]:::infobox
+        OH1 --> OH2 --> OH3 --> OH4
+        OH3 --> OH5
+    end
+
+    CTRL ~~~ HIER
+
+    subgraph DP["Data Plane Host"]
+        direction TB
+        AGT["Agent\nhttp + stream config\nTCP/UDP metrics\napp-centric dims"]:::newc
+        AVRD["AVRD\nhttp + TCP/UDP stream metrics\nngx_stream module stats"]:::newc
+        NGX["NGINX + stream module\nHTTP + TCP/UDP LB"]:::newc
+        GAP3["Stream block deployed\nTCP/UDP now handled"]:::newc
+        AGT --> NGX
+        NGX -->|http + stream metrics| AVRD
+        AVRD --> AGT
     end
 
     subgraph MSG["NATS Streaming"]
@@ -751,20 +789,10 @@ flowchart TB
     subgraph STORE["Storage"]
         CH["Clickhouse\nprotocol, server_zone\nupstream_group dims\n1B/day, 0 regressions"]:::newc
         PG["PostgreSQL\nTCP/UDP Component metadata"]:::newc
-        DBFW --> CH
-        DBFW --> PG
     end
 
-    subgraph DP["Data Plane Host"]
-        direction TB
-        AGT["Agent\nhttp + stream config\nTCP/UDP metrics\napp-centric dims"]:::newc
-        AVRD["AVRD\nhttp + TCP/UDP stream metrics\nngx_stream module stats"]:::newc
-        NGX["NGINX + stream module\nHTTP + TCP/UDP LB"]:::newc
-        GAP3["Stream block deployed\nTCP/UDP now handled"]:::newc
-        AGT --> NGX
-        NGX -->|http + stream metrics| AVRD
-        AVRD --> AGT
-    end
+    DBFW --> CH
+    DBFW --> PG
 
     TMPL -->|http + stream blocks| AGT
     AGT -->|metrics with dims| RECV
@@ -1342,6 +1370,41 @@ erDiagram
       <div style="font-size:14px;font-weight:600;color:var(--heading);margin-bottom:6px;">family dim + 2 nullable sparse columns</div>
       <div style="font-size:12.5px;color:var(--muted);"><code>family=tcp-udp</code> as stream discriminator. Only <code>upstream_group</code> and <code>server_zone</code> added as truly new nullable columns — no HTTP equivalent. Clickhouse columnar storage makes sparse nulls free. Zero regression confirmed in load test.</div>
     </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- References -->
+<section style="padding:48px 60px 40px;max-width:100%;">
+  <div class="sec-header" style="margin-bottom:28px;">
+    <div class="sec-tag">References</div>
+    <h2 class="sec-title">Documentation</h2>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:1100px;">
+
+    <a href="https://nginx.org/en/docs/stream/ngx_stream_core_module.html" target="_blank"
+       style="display:flex;align-items:flex-start;gap:12px;padding:16px 18px;background:#111827;border:1px solid #1e2d45;border-radius:8px;text-decoration:none;"
+       onmouseover="this.style.borderColor='rgba(0,229,160,0.4)'" onmouseout="this.style.borderColor='#1e2d45'">
+      <span style="font-family:'DM Mono',monospace;font-size:20px;color:var(--green);line-height:1;margin-top:2px;">⬡</span>
+      <div>
+        <div style="font-size:13.5px;font-weight:600;color:var(--heading);margin-bottom:4px;">ngx_stream_core_module</div>
+        <div style="font-size:12px;color:var(--muted);font-family:'DM Mono',monospace;">nginx.org/en/docs/stream/ngx_stream_core_module.html</div>
+        <div style="font-size:12px;color:#64748b;margin-top:4px;">Core stream{} module — the foundation for TCP/UDP load balancing in NGINX</div>
+      </div>
+    </a>
+
+    <a href="https://nginx.org/en/docs/stream/ngx_stream_core_module.html" target="_blank"
+       style="display:flex;align-items:flex-start;gap:12px;padding:16px 18px;background:#111827;border:1px solid #1e2d45;border-radius:8px;text-decoration:none;"
+       onmouseover="this.style.borderColor='rgba(0,229,160,0.4)'" onmouseout="this.style.borderColor='#1e2d45'">
+      <span style="font-family:'DM Mono',monospace;font-size:20px;color:var(--green);line-height:1;margin-top:2px;">⬡</span>
+      <div>
+        <div style="font-size:13.5px;font-weight:600;color:var(--heading);margin-bottom:4px;">ngx_stream_core_module</div>
+        <div style="font-size:12px;color:var(--muted);font-family:'DM Mono',monospace;">nginx.org/en/docs/stream/ngx_stream_core_module.html</div>
+        <div style="font-size:12px;color:#64748b;margin-top:4px;">Core stream{} module — the foundation for TCP/UDP load balancing in NGINX</div>
+      </div>
+    </a>
+
   </div>
 </section>
 
