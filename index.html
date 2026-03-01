@@ -666,12 +666,13 @@ flowchart TB
     classDef infobox  fill:#080f1e,stroke:#1e3a60,color:#6b8fb5
 
     subgraph CTRL["Controller"]
-        direction TB
+        direction LR
         NRP["NGINX Reverse Proxy"]:::existing
         EXT["Declarative API\nHTTP only"]:::existing
         TMPL["Go Template Engine\nHTTP sequential"]:::existing
         GAP1["GAP: No TCP/UDP Component\nCannot provision L4"]:::missing
         NRP --> EXT --> TMPL
+        TMPL ~~~ GAP1
     end
 
     subgraph HIER["API Object Hierarchy — HTTP Only"]
@@ -696,7 +697,7 @@ flowchart TB
         AVRD --> AGT
     end
 
-    subgraph MSG["NATS Streaming"]
+    subgraph MSG["NATS Streaming (Control Plane)"]
         direction TB
         RECV["Receiver\nHTTP metrics only"]:::existing
         NATS["NATS"]:::infra
@@ -742,12 +743,13 @@ flowchart TB
     classDef infobox  fill:#03200f,stroke:#00e5a0,color:#6effd4,stroke-width:1px
 
     subgraph CTRL["Controller"]
-        direction TB
+        direction LR
         NRP["NGINX Reverse Proxy"]:::existing
         EXT["Declarative API\nHTTP + TCP + UDP"]:::newc
         TMPL["Go Template Engine\nConcurrent goroutines\nHTTP + stream parallel\natomic write"]:::newc
         GAP1["TCP/UDP Component\nstreamIngress + streamBackend\nhealth checks, timeouts"]:::newc
         NRP --> EXT --> TMPL
+        TMPL ~~~ GAP1
     end
 
     subgraph HIER["API Object Hierarchy — Extended for TCP/UDP"]
@@ -774,7 +776,7 @@ flowchart TB
         AVRD --> AGT
     end
 
-    subgraph MSG["NATS Streaming"]
+    subgraph MSG["NATS Streaming (Control Plane)"]
         direction TB
         RECV["Receiver\nnullable TCP/UDP dims\nHTTP hot path unchanged"]:::newc
         NATS["NATS"]:::infra
