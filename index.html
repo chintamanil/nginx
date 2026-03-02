@@ -394,7 +394,7 @@ section {
 .code-block .s  { color: #7bdf8e; }
 .code-block .c  { color: #3a5270; font-style: italic; }
 .code-block .n  { color: #ffc45e; }
-.code-block .com { color: #1e3a5f; font-style: italic; font-size: 11px; }
+.code-block .com { color: #3669ac; font-style: italic; font-size: 11px; }
 
 /* ── TIMELINE ── */
 .timeline {
@@ -712,14 +712,14 @@ flowchart TB
         NGX["NGINX\nHTTP LB only"]:::agent
         GAP3["GAP: No stream block\nTCP/UDP not handled"]:::missing
         AGT --> NGX
-        NGX -->|http metrics| AVRD
-        AVRD --> AGT
+        NGX -->|NGINX Plus API: http server_zones| AVRD
+        AVRD -->|Unix socket: local aggregation| AGT
     end
 
-    subgraph MSG["NATS Streaming (Control Plane)"]
+    subgraph MSG["NATS JetStream (Control Plane)"]
         direction TB
         RECV["Receiver\nHTTP metrics only"]:::existing
-        NATS["NATS"]:::infra
+        NATS["NATS JetStream"]:::infra
         DBFW["DB Forwarder"]:::existing
         GAP2["GAP: No TCP metrics\nNever reach forwarder"]:::missing
         PY["Python Forwarders"]:::existing
@@ -736,8 +736,8 @@ flowchart TB
     DBFW --> CH
     DBFW --> PG
 
-    TMPL -->|http only| AGT
-    AGT -->|http metrics| RECV
+    TMPL -->|gRPC pull, agent-initiated| AGT
+    AGT -->|gRPC stream, agent push| RECV
           </div>
         </div>
       </div>
@@ -791,14 +791,14 @@ flowchart TB
         NGX["NGINX + stream module\nHTTP + TCP/UDP LB"]:::newc
         GAP3["Stream block deployed\nTCP/UDP now handled"]:::newc
         AGT --> NGX
-        NGX -->|http + stream metrics| AVRD
-        AVRD --> AGT
+        NGX -->|NGINX Plus API: http + stream server_zones| AVRD
+        AVRD -->|Unix socket: local aggregation| AGT
     end
 
-    subgraph MSG["NATS Streaming (Control Plane)"]
+    subgraph MSG["NATS JetStream (Control Plane)"]
         direction TB
         RECV["Receiver\nnullable TCP/UDP dims\nHTTP hot path unchanged"]:::newc
-        NATS["NATS"]:::infra
+        NATS["NATS JetStream"]:::infra
         DBFW["DB Forwarder"]:::existing
         GAP2["TCP/UDP metrics\nnow reach forwarder"]:::newc
         PY["Python Forwarders"]:::existing
@@ -815,8 +815,8 @@ flowchart TB
     DBFW --> CH
     DBFW --> PG
 
-    TMPL -->|http + stream blocks| AGT
-    AGT -->|metrics with dims| RECV
+    TMPL -->|gRPC pull, agent-initiated| AGT
+    AGT -->|gRPC stream, agent push| RECV
           </div>
         </div>
       </div>
@@ -861,7 +861,7 @@ flowchart TB
       <div class="diagram-body" style="padding:0;">
         <pre class="code-block" style="border:none;border-radius:0;margin:0;font-size:11.5px;"><span style="color:#7b61ff;">POST</span>  <span style="color:#00c8ff;">/api/v1/services/environments/{envName}/apps/{appName}/components</span>
 
-<span style="color:#1e3a5f;">// ── EXISTING HTTP Component (unchanged) ────────────────────</span>
+<span style="color:#3669ac;">// ── EXISTING HTTP Component (unchanged) ────────────────────</span>
 {
   <span style="color:#7bdf8e;">"metadata"</span>: { <span style="color:#7bdf8e;">"name"</span>: <span style="color:#7bdf8e;">"my-http-component"</span> },
   <span style="color:#7bdf8e;">"desiredState"</span>: {
@@ -871,30 +871,30 @@ flowchart TB
     },
     <span style="color:#7bdf8e;">"backend"</span>: {
       <span style="color:#7bdf8e;">"workloadGroups"</span>: {
-        <span style="color:#7bdf8e;">"api-backend"</span>: {          <span style="color:#1e3a5f;">// key becomes upstream name in nginx.conf</span>
+        <span style="color:#7bdf8e;">"api-backend"</span>: {          <span style="color:#3669ac;">// key becomes upstream name in nginx.conf</span>
           <span style="color:#7bdf8e;">"loadBalancingMethod"</span>: { <span style="color:#7bdf8e;">"type"</span>: <span style="color:#7bdf8e;">"LEAST_CONNECTIONS"</span> },
           <span style="color:#7bdf8e;">"uris"</span>: {
             <span style="color:#7bdf8e;">"http://10.0.0.1:8080"</span>: { <span style="color:#7bdf8e;">"weight"</span>: <span style="color:#ffc45e;">5</span>, <span style="color:#7bdf8e;">"maxFails"</span>: <span style="color:#ffc45e;">3</span> },
             <span style="color:#7bdf8e;">"http://10.0.0.2:8080"</span>: { <span style="color:#7bdf8e;">"weight"</span>: <span style="color:#ffc45e;">3</span> }
           },
           <span style="color:#7bdf8e;">"keepalive"</span>: <span style="color:#ffc45e;">32</span>
-        <span style="color:#1e3a5f;">... }</span>
+        <span style="color:#3669ac;">... }</span>
 }
 
-<span style="color:#1e3a5f;">// ── NEW TCP/UDP Component (* designed in this project) ──────</span>
+<span style="color:#3669ac;">// ── NEW TCP/UDP Component (* designed in this project) ──────</span>
 {
   <span style="color:#7bdf8e;">"metadata"</span>: { <span style="color:#7bdf8e;">"name"</span>: <span style="color:#7bdf8e;">"my-tcp-component"</span> },
   <span style="color:#7bdf8e;">"desiredState"</span>: {
-    <span style="color:#7bdf8e;">"streamIngress"</span>: {        <span style="color:#1e3a5f;">// * NEW top-level key</span>
+    <span style="color:#7bdf8e;">"streamIngress"</span>: {        <span style="color:#3669ac;">// * NEW top-level key</span>
       <span style="color:#7bdf8e;">"serverName"</span>: <span style="color:#7bdf8e;">"db-frontend"</span>,
       <span style="color:#7bdf8e;">"listen"</span>: {
         <span style="color:#7bdf8e;">"port"</span>: <span style="color:#ffc45e;">5432</span>,
-        <span style="color:#7bdf8e;">"protocol"</span>: <span style="color:#7bdf8e;">"TCP"</span>,     <span style="color:#1e3a5f;">// "TCP" | "UDP"</span>
+        <span style="color:#7bdf8e;">"protocol"</span>: <span style="color:#7bdf8e;">"TCP"</span>,     <span style="color:#3669ac;">// "TCP" | "UDP"</span>
         <span style="color:#7bdf8e;">"udpReuseport"</span>: <span style="color:#ffc45e;">false</span>,
         <span style="color:#7bdf8e;">"proxyProtocol"</span>: <span style="color:#ffc45e;">false</span>
       }
     },
-    <span style="color:#7bdf8e;">"streamBackend"</span>: {        <span style="color:#1e3a5f;">// * NEW top-level key</span>
+    <span style="color:#7bdf8e;">"streamBackend"</span>: {        <span style="color:#3669ac;">// * NEW top-level key</span>
       <span style="color:#7bdf8e;">"workloadGroups"</span>: {
         <span style="color:#7bdf8e;">"db-pool"</span>: {
           <span style="color:#7bdf8e;">"loadBalancingMethod"</span>: {
@@ -909,8 +909,8 @@ flowchart TB
         }
       },
       <span style="color:#7bdf8e;">"healthCheck"</span>: { <span style="color:#7bdf8e;">"type"</span>: <span style="color:#7bdf8e;">"TCP_CONNECT"</span> },
-      <span style="color:#7bdf8e;">"gracefulDelay"</span>: <span style="color:#ffc45e;">60</span>       <span style="color:#1e3a5f;">// * drain long-lived connections</span>
-      <span style="color:#1e3a5f;">... }</span>}</pre>
+      <span style="color:#7bdf8e;">"gracefulDelay"</span>: <span style="color:#ffc45e;">60</span>       <span style="color:#3669ac;">// * drain long-lived connections</span>
+      <span style="color:#3669ac;">... }</span>}</pre>
       </div>
     </div>
 
@@ -930,8 +930,8 @@ flowchart TB
         <span style="font-family:'DM Mono',monospace;font-size:10px;color:#00e5a0;letter-spacing:1px;">OUTPUT</span>
       </div>
       <div class="diagram-body" style="padding:0;">
-        <pre class="code-block" style="border:none;border-radius:0;margin:0;font-size:11.5px;"><span style="color:#1e3a5f;">// goroutine 1 renders http{} ────────────────────────────────</span>
-<span style="color:#ffc45e;">worker_shutdown_timeout</span> 60s; <span style="color:#1e3a5f;">// gracefulDelay — main context, applies to all workers</span>
+        <pre class="code-block" style="border:none;border-radius:0;margin:0;font-size:11.5px;"><span style="color:#3669ac;">// goroutine 1 renders http{} ────────────────────────────────</span>
+<span style="color:#ffc45e;">worker_shutdown_timeout</span> 60s; <span style="color:#3669ac;">// gracefulDelay — main context, applies to all workers</span>
 <span style="color:#7b61ff;">http</span> {
     <span style="color:#ffc45e;">upstream</span> <span style="color:#00c8ff;">api-backend</span> {
         <span style="color:#ffc45e;">least_conn</span>;
@@ -942,7 +942,7 @@ flowchart TB
     <span style="color:#7b61ff;">server</span> {
         <span style="color:#ffc45e;">listen</span>       80;
         <span style="color:#ffc45e;">server_name</span>  api.example.com;
-        <span style="color:#ffc45e;">status_zone</span>  <span style="color:#00c8ff;">my-http-component</span>; <span style="color:#1e3a5f;">// derived from Component metadata.name</span>
+        <span style="color:#ffc45e;">status_zone</span>  <span style="color:#00c8ff;">my-http-component</span>; <span style="color:#3669ac;">// derived from Component metadata.name</span>
         <span style="color:#7b61ff;">location</span> /api {
             <span style="color:#ffc45e;">proxy_pass</span>         http://api-backend;
             <span style="color:#ffc45e;">proxy_http_version</span> 1.1;
@@ -951,7 +951,7 @@ flowchart TB
     }
 }
 
-<span style="color:#1e3a5f;">// goroutine 2 renders stream{} ──────────────────────────────</span>
+<span style="color:#3669ac;">// goroutine 2 renders stream{} ──────────────────────────────</span>
 <span style="color:#7b61ff;">stream</span> {
     <span style="color:#ffc45e;">upstream</span> <span style="color:#00c8ff;">db-pool</span> {
         <span style="color:#ffc45e;">hash</span>  $remote_addr  consistent;
@@ -961,21 +961,21 @@ flowchart TB
     <span style="color:#7b61ff;">server</span> {
         <span style="color:#ffc45e;">listen</span>                  5432;
         <span style="color:#ffc45e;">proxy_pass</span>              db-pool;
-        <span style="color:#ffc45e;">status_zone</span>             <span style="color:#00c8ff;">db-frontend</span>; <span style="color:#1e3a5f;">// from streamIngress.serverName — operator-provided</span>
+        <span style="color:#ffc45e;">status_zone</span>             <span style="color:#00c8ff;">db-frontend</span>; <span style="color:#3669ac;">// from streamIngress.serverName — operator-provided</span>
         <span style="color:#ffc45e;">proxy_connect_timeout</span>   1s;
         <span style="color:#ffc45e;">proxy_timeout</span>           10m;
     }
 }
 
-<span style="color:#1e3a5f;">// wg.Wait() — both goroutines done, merge + atomic write ────</span>
+<span style="color:#3669ac;">// wg.Wait() — both goroutines done, merge + atomic write ────</span>
 <span style="color:#7b61ff;">var</span> wg sync.WaitGroup
 wg.Add(<span style="color:#ffc45e;">2</span>)
 <span style="color:#ffc45e;">go</span> <span style="color:#7b61ff;">func</span>() { <span style="color:#ffc45e;">defer</span> wg.Done(); renderHTTP(&amp;httpBlock, c.HTTP) }()
 <span style="color:#ffc45e;">go</span> <span style="color:#7b61ff;">func</span>() { <span style="color:#ffc45e;">defer</span> wg.Done(); renderStream(&amp;streamBlock, c.Stream) }()
 wg.Wait()
 
-atomicWrite(nginxConfPath, merged) <span style="color:#1e3a5f;">// rename() — atomic</span>
-exec.Command(<span style="color:#7bdf8e;">"nginx"</span>, <span style="color:#7bdf8e;">"-t"</span>).Run()   <span style="color:#1e3a5f;">// validate first</span>
+atomicWrite(nginxConfPath, merged) <span style="color:#3669ac;">// rename() — atomic</span>
+exec.Command(<span style="color:#7bdf8e;">"nginx"</span>, <span style="color:#7bdf8e;">"-t"</span>).Run()   <span style="color:#3669ac;">// validate first</span>
 exec.Command(<span style="color:#7bdf8e;">"nginx"</span>, <span style="color:#7bdf8e;">"-s"</span>, <span style="color:#7bdf8e;">"reload"</span>).Run()</pre>
       </div>
     </div>
@@ -1507,7 +1507,7 @@ mermaid.initialize({
     mainBkg: '#0d1420',
     nodeBorder: '#2e5fa3',
     clusterBkg: '#060910',
-    clusterBorder: '#1e3a5f',
+    clusterBorder: '#3669ac',
     titleColor: '#f0f6ff',
     edgeLabelBackground: '#0d1420',
     actorBkg: '#0f2340',
