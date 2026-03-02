@@ -847,7 +847,7 @@ flowchart TB
   </div>
 
   <!-- Input → Output side by side -->
-  <div style="display:grid;grid-template-columns:1fr 40px 1fr;gap:0;align-items:center;margin-bottom:48px;">
+  <div style="display:grid;grid-template-columns:1fr 40px 1fr;gap:0;align-items:center;margin-bottom:16px;">
 
     <!-- LEFT: API Input -->
     <div class="diagram-frame">
@@ -931,6 +931,7 @@ flowchart TB
       </div>
       <div class="diagram-body" style="padding:0;">
         <pre class="code-block" style="border:none;border-radius:0;margin:0;font-size:11.5px;"><span style="color:#1e3a5f;">// goroutine 1 renders http{} ────────────────────────────────</span>
+<span style="color:#ffc45e;">worker_shutdown_timeout</span> 60s; <span style="color:#1e3a5f;">// gracefulDelay — main context, applies to all workers</span>
 <span style="color:#7b61ff;">http</span> {
     <span style="color:#ffc45e;">upstream</span> <span style="color:#00c8ff;">api-backend</span> {
         <span style="color:#ffc45e;">least_conn</span>;
@@ -963,7 +964,6 @@ flowchart TB
         <span style="color:#ffc45e;">status_zone</span>             <span style="color:#00c8ff;">db-frontend</span>; <span style="color:#1e3a5f;">// from streamIngress.serverName — operator-provided</span>
         <span style="color:#ffc45e;">proxy_connect_timeout</span>   1s;
         <span style="color:#ffc45e;">proxy_timeout</span>           10m;
-        <span style="color:#ffc45e;">worker_shutdown_timeout</span> 60s; <span style="color:#1e3a5f;">// gracefulDelay</span>
     }
 }
 
