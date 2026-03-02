@@ -20,7 +20,7 @@
   --red:      #ff4d6a;
   --amber:    #ffb830;
   --text:     #dce6f5;
-  --muted:    #4a6080;
+  --muted:    #9cbcda;
   --heading:  #f0f6ff;
 }
 
@@ -76,7 +76,7 @@ nav {
 .nav-links a {
   font-size: 12px;
   font-family: 'DM Mono', monospace;
-  color: var(--muted);
+  color: #c0d8f0;
   text-decoration: none;
   letter-spacing: 1px;
   transition: color 0.2s;
@@ -582,6 +582,15 @@ footer a { color: var(--accent); text-decoration: none; }
   .nav-links { display: none; }
   .impact-section { padding: 80px 24px; }
 }
+/* ── MERMAID ERD TEXT OVERRIDES — force bright text in all attribute cells ── */
+.mermaid svg .er.attributeBoxEven text,
+.mermaid svg .er.attributeBoxOdd text,
+.mermaid svg .er.entityBox ~ text,
+.mermaid svg text.er { fill: #f0f6ff !important; }
+
+/* Description column (3rd cell) — "NEW: …" annotations */
+.mermaid svg .er.attributeBoxEven:last-child text,
+.mermaid svg .er.attributeBoxOdd:last-child text { fill: #f0f6ff !important; }
 </style>
 </head>
 <body>
@@ -659,12 +668,12 @@ footer a { color: var(--accent); text-decoration: none; }
         <div class="diagram-body" style="padding:16px 12px;">
           <div class="mermaid">
 flowchart TB
-    classDef existing fill:#0f2340,stroke:#1e4d8c,color:#93c5fd
-    classDef infra    fill:#1a1040,stroke:#4c3a9e,color:#c4b5fd
-    classDef agent    fill:#0a0a20,stroke:#3a3a8c,color:#a5b4fc
-    classDef store    fill:#100e0a,stroke:#4a3a28,color:#d4c4a8
-    classDef missing  fill:#2a0a10,stroke:#ef4444,color:#fca5a5,stroke-dasharray:6 3
-    classDef infobox  fill:#080f1e,stroke:#1e3a60,color:#6b8fb5
+    classDef existing fill:#0f2340,stroke:#1e4d8c,color:#ffffff
+    classDef infra    fill:#1a1040,stroke:#4c3a9e,color:#ffffff
+    classDef agent    fill:#0a0a20,stroke:#3a3a8c,color:#ffffff
+    classDef store    fill:#100e0a,stroke:#4a3a28,color:#ffffff
+    classDef missing  fill:#2a0a10,stroke:#ef4444,color:#ffbdbd,stroke-dasharray:6 3
+    classDef infobox  fill:#080f1e,stroke:#1e3a60,color:#ffffff
 
     subgraph CTRL["Controller"]
         direction LR
@@ -736,12 +745,12 @@ flowchart TB
         <div class="diagram-body" style="padding:16px 12px;">
           <div class="mermaid">
 flowchart TB
-    classDef newc     fill:#053a22,stroke:#00e5a0,color:#d1fae5,stroke-width:2px
-    classDef existing fill:#0f2340,stroke:#1e4d8c,color:#93c5fd
-    classDef infra    fill:#1a1040,stroke:#4c3a9e,color:#c4b5fd
-    classDef agent    fill:#0a0a20,stroke:#3a3a8c,color:#a5b4fc
-    classDef store    fill:#100e0a,stroke:#4a3a28,color:#d4c4a8
-    classDef infobox  fill:#03200f,stroke:#00e5a0,color:#6effd4,stroke-width:1px
+    classDef newc     fill:#053a22,stroke:#00e5a0,color:#f0ffff,stroke-width:2px
+    classDef existing fill:#0f2340,stroke:#1e4d8c,color:#ffffff
+    classDef infra    fill:#1a1040,stroke:#4c3a9e,color:#ffffff
+    classDef agent    fill:#0a0a20,stroke:#3a3a8c,color:#ffffff
+    classDef store    fill:#100e0a,stroke:#4a3a28,color:#ffffff
+    classDef infobox  fill:#03200f,stroke:#00e5a0,color:#b5ffff,stroke-width:1px
 
     subgraph CTRL["Controller"]
         direction LR
@@ -1054,26 +1063,44 @@ erDiagram
         bool    stream_enabled "NEW: stream module enabled"
     }
 
+    GATEWAY {
+        string  gateway_id     PK
+        string  listen_port    "binds instance + listen port"
+        string  instance_id    FK
+    }
+
     APP_ENVIRONMENT {
         string  app_env_id     PK
-        string  name
-        string  instance_id    FK
+        string  name           "PROD / STAGING namespace"
+        string  gateway_id     FK
+    }
+
+    APP {
+        string  app_id         PK
+        string  name           "logical service grouping"
+        string  app_env_id     FK
     }
 
     COMPONENT_CONFIG {
         string  component_id      PK
-        string  family            "NEW: web or tcp-udp — matches Clickhouse dim"
         string  type              "NEW: http or tcp or udp"
         string  listen_port       "NEW: TCP/UDP listen port"
         string  upstream_servers
         json    protocol_options  "NEW: stream-specific settings"
         string  health_check      "NEW: tcp/udp health check type"
         int     graceful_delay    "NEW: drain timeout seconds"
-        string  app_env_id        FK
+        string  app_id            FK
     }
 
-    NGINX_INSTANCE ||--o{ APP_ENVIRONMENT : "hosts"
-    APP_ENVIRONMENT ||--o{ COMPONENT_CONFIG : "owns"
+    NGINX_INSTANCE ||--o{ GATEWAY        : "hosts"
+    GATEWAY        ||--o{ APP_ENVIRONMENT : "scopes"
+    APP_ENVIRONMENT ||--o{ APP            : "groups"
+    APP            ||--o{ COMPONENT_CONFIG : "owns — http+tcp coexist, rendered atomically"
+          </div>
+
+          <!-- Coexistence note -->
+          <div style="margin:14px 12px 4px;background:rgba(123,97,255,0.05);border:1px solid rgba(123,97,255,0.2);border-radius:7px;padding:12px 16px;font-family:'DM Mono',monospace;font-size:11.5px;color:var(--muted);line-height:1.7;">
+            <span style="color:#c4b5fd;letter-spacing:1px;">ATOMIC RENDER</span> — multiple <code>COMPONENT_CONFIG</code> rows under one <code>APP</code> with different <code>type</code> values (<code>http</code>, <code>tcp</code>, <code>udp</code>) are read together by the template engine and written as a single <code>nginx.conf</code> with merged <code>http{}</code> + <code>stream{}</code> blocks.
           </div>
         </div>
       </div>
@@ -1085,7 +1112,7 @@ erDiagram
       <div class="diagram-frame" style="border-color:rgba(0,229,160,0.2);">
         <div class="diagram-bar">
           <div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div>
-          <span class="diagram-label">clickhouse / nginx_metric — green = new nullable columns</span>
+          <span class="diagram-label">clickhouse / nginx_metric — green = new nullable columns — 4 rollup tables via MaterializedViews</span>
         </div>
         <div class="diagram-body" style="padding:20px 12px;">
           <div class="mermaid">
@@ -1094,27 +1121,59 @@ erDiagram
         string   metric_name
         bigint   timestamp
         float    value
+        int      sample_count     "always 1 on raw insert"
         string   instance_id
         string   app_name
         string   component_name
         string   environment_name
         string   proxied_protocol
-        string   family           "NEW: web or tcp-udp — stream discriminator"
-        string   upstream_group   "NEW: nullable, tcp/udp upstream name"
-        string   server_zone      "NEW: nullable, stream server zone"
-    }
-
-    NGINX_METRIC_ROLLUP {
-        string   metric_name
-        bigint   timestamp_minute
-        float    value_avg
-        float    value_max
         string   family           "NEW: web or tcp-udp"
         string   upstream_group   "NEW: nullable"
         string   server_zone      "NEW: nullable"
     }
 
-    NGINX_METRIC ||--o{ NGINX_METRIC_ROLLUP : "aggregated into"
+    NGINX_METRIC_5M {
+        string   metric_name
+        bigint   timestamp_bucket "truncated to 5-min boundary"
+        float    value_avg
+        float    value_sum
+        float    value_max
+        float    value_min
+        int      sample_count     "for correct re-aggregation"
+        string   family
+        string   upstream_group
+        string   server_zone
+    }
+
+    NGINX_METRIC ||--o{ NGINX_METRIC_5M : "MV → 5-min bucket"
+          </div>
+
+          <!-- Rollup pattern note -->
+          <div style="margin:14px 12px 4px;background:rgba(0,229,160,0.05);border:1px solid rgba(0,229,160,0.18);border-radius:7px;padding:12px 16px;font-family:'DM Mono',monospace;font-size:11.5px;color:var(--muted);line-height:1.7;">
+            <span style="color:var(--green);letter-spacing:1px;">SAME SCHEMA</span> repeated for
+            <code style="color:#c8e0ff;">NGINX_METRIC_1H</code> ·
+            <code style="color:#c8e0ff;">NGINX_METRIC_1D</code> ·
+            <code style="color:#c8e0ff;">NGINX_METRIC_7D</code>
+            — each fed by its own <code>MaterializedView</code>, each with a separate TTL and <code>ORDER BY (metric_name, family, timestamp_bucket)</code> sort key.
+          </div>
+        </div>
+      </div>
+
+      <!-- MaterializedView + TTL callout -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px;">
+        <div style="background:rgba(0,229,160,0.05);border:1px solid rgba(0,229,160,0.15);border-radius:8px;padding:14px 16px;">
+          <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--green);letter-spacing:1.5px;margin-bottom:8px;">MATERIALIZED VIEWS</div>
+          <div style="font-size:12.5px;color:var(--muted);line-height:1.6;">One MV per rollup table, triggered on every insert to <code>NGINX_METRIC</code>. Each MV runs <code>toStartOfInterval(timestamp, INTERVAL N)</code> to align the bucket, then aggregates into <code>AggregatingMergeTree</code>. Background merges continue aggregating automatically — no separate aggregation job needed.</div>
+        </div>
+        <div style="background:rgba(0,229,160,0.05);border:1px solid rgba(0,229,160,0.15);border-radius:8px;padding:14px 16px;">
+          <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--green);letter-spacing:1.5px;margin-bottom:8px;">TTL POLICY PER TABLE</div>
+          <div style="font-size:12.5px;color:var(--muted);line-height:1.6;">
+            <code>NGINX_METRIC</code> → 7 days &nbsp;·&nbsp; raw events, high write rate<br>
+            <code>NGINX_METRIC_5M</code> → 30 days<br>
+            <code>NGINX_METRIC_1H</code> → 90 days<br>
+            <code>NGINX_METRIC_1D</code> → 2 years<br>
+            <code>NGINX_METRIC_7D</code> → forever<br>
+            Each window has its own <code>ORDER BY (metric_name, family, timestamp_bucket)</code> sort key — impossible to share one table across resolutions.
           </div>
         </div>
       </div>
@@ -1342,34 +1401,34 @@ sequenceDiagram
     <div style="background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent);border-radius:10px;padding:22px;">
       <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--accent);letter-spacing:2px;margin-bottom:14px;text-transform:uppercase;">Staff Engineer — Personally Owned</div>
       <ul style="list-style:none;display:flex;flex-direction:column;gap:8px;">
-        <li style="font-size:13px;color:#8ba4c4;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--accent);margin-top:1px;">→</span>TCP/UDP Component CRUD API</li>
-        <li style="font-size:13px;color:#8ba4c4;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--accent);margin-top:1px;">→</span>Concurrent Go template engine rewrite</li>
-        <li style="font-size:13px;color:#8ba4c4;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--accent);margin-top:1px;">→</span>Agent stream config + metrics updates</li>
-        <li style="font-size:13px;color:#8ba4c4;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--accent);margin-top:1px;">→</span>Cross-squad design review facilitation</li>
-        <li style="font-size:13px;color:#8ba4c4;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--accent);margin-top:1px;">→</span>API contract + ERD finalization</li>
-        <li style="font-size:13px;color:#8ba4c4;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--accent);margin-top:1px;">→</span>Golden file test strategy</li>
+        <li style="font-size:13px;color:#9fbce1;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--accent);margin-top:1px;">→</span>TCP/UDP Component CRUD API</li>
+        <li style="font-size:13px;color:#9fbce1;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--accent);margin-top:1px;">→</span>Concurrent Go template engine rewrite</li>
+        <li style="font-size:13px;color:#9fbce1;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--accent);margin-top:1px;">→</span>Agent stream config + metrics updates</li>
+        <li style="font-size:13px;color:#9fbce1;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--accent);margin-top:1px;">→</span>Cross-squad design review facilitation</li>
+        <li style="font-size:13px;color:#9fbce1;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--accent);margin-top:1px;">→</span>API contract + ERD finalization</li>
+        <li style="font-size:13px;color:#9fbce1;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--accent);margin-top:1px;">→</span>Golden file test strategy</li>
       </ul>
     </div>
 
     <div style="background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--accent2);border-radius:10px;padding:22px;">
       <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--accent2);letter-spacing:2px;margin-bottom:14px;text-transform:uppercase;">Delegated — With Clear Contracts</div>
       <ul style="list-style:none;display:flex;flex-direction:column;gap:8px;">
-        <li style="font-size:13px;color:#8ba4c4;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--accent2);margin-top:1px;">→</span><span><strong style="color:var(--text);">Backend:</strong> Receiver data model + Clickhouse schema migration</span></li>
-        <li style="font-size:13px;color:#8ba4c4;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--accent2);margin-top:1px;">→</span><span><strong style="color:var(--text);">Frontend:</strong> Stream metrics UI per defined spec</span></li>
-        <li style="font-size:13px;color:#8ba4c4;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--accent2);margin-top:1px;">→</span><span><strong style="color:var(--text);">QA:</strong> Test matrix against golden .conf files</span></li>
-        <li style="font-size:13px;color:#8ba4c4;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--accent2);margin-top:1px;">→</span><span><strong style="color:var(--text);">DevOps:</strong> Agent rollout via stream_enabled feature flag</span></li>
+        <li style="font-size:13px;color:#9fbce1;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--accent2);margin-top:1px;">→</span><span><strong style="color:var(--text);">Backend:</strong> Receiver data model + Clickhouse schema migration</span></li>
+        <li style="font-size:13px;color:#9fbce1;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--accent2);margin-top:1px;">→</span><span><strong style="color:var(--text);">Frontend:</strong> Stream metrics UI per defined spec</span></li>
+        <li style="font-size:13px;color:#9fbce1;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--accent2);margin-top:1px;">→</span><span><strong style="color:var(--text);">QA:</strong> Test matrix against golden .conf files</span></li>
+        <li style="font-size:13px;color:#9fbce1;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--accent2);margin-top:1px;">→</span><span><strong style="color:var(--text);">DevOps:</strong> Agent rollout via stream_enabled feature flag</span></li>
       </ul>
     </div>
 
     <div style="background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--green);border-radius:10px;padding:22px;">
       <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--green);letter-spacing:2px;margin-bottom:14px;text-transform:uppercase;">Alignment Artifacts Produced</div>
       <ul style="list-style:none;display:flex;flex-direction:column;gap:8px;">
-        <li style="font-size:13px;color:#8ba4c4;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--green);margin-top:1px;">✓</span>POC (Go template + agent deploy + AVRD collection)</li>
-        <li style="font-size:13px;color:#8ba4c4;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--green);margin-top:1px;">✓</span>ERD — shared 48h before design review</li>
-        <li style="font-size:13px;color:#8ba4c4;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--green);margin-top:1px;">✓</span>OpenAPI contract — signed off by PM + architects</li>
-        <li style="font-size:13px;color:#8ba4c4;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--green);margin-top:1px;">✓</span>Frontend UI flow spec</li>
-        <li style="font-size:13px;color:#8ba4c4;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--green);margin-top:1px;">✓</span>QA golden file test matrix</li>
-        <li style="font-size:13px;color:#8ba4c4;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--green);margin-top:1px;">✓</span>6 Jira epics with clear acceptance criteria</li>
+        <li style="font-size:13px;color:#9fbce1;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--green);margin-top:1px;">✓</span>POC (Go template + agent deploy + AVRD collection)</li>
+        <li style="font-size:13px;color:#9fbce1;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--green);margin-top:1px;">✓</span>ERD — shared 48h before design review</li>
+        <li style="font-size:13px;color:#9fbce1;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--green);margin-top:1px;">✓</span>OpenAPI contract — signed off by PM + architects</li>
+        <li style="font-size:13px;color:#9fbce1;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--green);margin-top:1px;">✓</span>Frontend UI flow spec</li>
+        <li style="font-size:13px;color:#9fbce1;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--green);margin-top:1px;">✓</span>QA golden file test matrix</li>
+        <li style="font-size:13px;color:#9fbce1;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--green);margin-top:1px;">✓</span>6 Jira epics with clear acceptance criteria</li>
       </ul>
     </div>
 
@@ -1426,27 +1485,29 @@ mermaid.initialize({
   theme: 'dark',
   themeVariables: {
     primaryColor: '#0f2340',
-    primaryTextColor: '#dce6f5',
-    primaryBorderColor: '#1e4d8c',
-    lineColor: '#2a4060',
+    primaryTextColor: '#f0f6ff',
+    primaryBorderColor: '#2e5fa3',
+    lineColor: '#4a90d9',
     secondaryColor: '#053a22',
     tertiaryColor: '#1a1040',
     background: '#0d1420',
     mainBkg: '#0d1420',
-    nodeBorder: '#1e4d8c',
+    nodeBorder: '#2e5fa3',
     clusterBkg: '#060910',
-    clusterBorder: '#162033',
+    clusterBorder: '#1e3a5f',
     titleColor: '#f0f6ff',
     edgeLabelBackground: '#0d1420',
     actorBkg: '#0f2340',
-    actorBorder: '#1e4d8c',
-    actorTextColor: '#dce6f5',
-    signalColor: '#4a6080',
+    actorBorder: '#2e5fa3',
+    actorTextColor: '#f0f6ff',
+    signalColor: '#6a9bbf',
     labelBoxBkgColor: '#0d1420',
-    labelBoxBorderColor: '#1e4d8c',
-    labelTextColor: '#dce6f5',
+    labelBoxBorderColor: '#2e5fa3',
+    labelTextColor: '#f0f6ff',
     noteBkgColor: '#100e0a',
-    noteTextColor: '#dce6f5',
+    noteTextColor: '#f0f6ff',
+    attributeBackgroundColorOdd: '#0d1928',
+    attributeBackgroundColorEven: '#0a1520',
     fontFamily: 'DM Mono, monospace',
     fontSize: '13px',
   },
