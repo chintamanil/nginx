@@ -871,10 +871,14 @@ flowchart TB
     },
     <span style="color:#7bdf8e;">"backend"</span>: {
       <span style="color:#7bdf8e;">"workloadGroups"</span>: {
-        <span style="color:#7bdf8e;">"group1"</span>: { <span style="color:#7bdf8e;">"uris"</span>: { <span style="color:#7bdf8e;">"http://10.0.0.1:8080"</span>: {} } }
-      }
-    }
-  }
+        <span style="color:#7bdf8e;">"api-backend"</span>: {          <span style="color:#1e3a5f;">// key becomes upstream name in nginx.conf</span>
+          <span style="color:#7bdf8e;">"loadBalancingMethod"</span>: { <span style="color:#7bdf8e;">"type"</span>: <span style="color:#7bdf8e;">"LEAST_CONNECTIONS"</span> },
+          <span style="color:#7bdf8e;">"uris"</span>: {
+            <span style="color:#7bdf8e;">"http://10.0.0.1:8080"</span>: { <span style="color:#7bdf8e;">"weight"</span>: <span style="color:#ffc45e;">5</span>, <span style="color:#7bdf8e;">"maxFails"</span>: <span style="color:#ffc45e;">3</span> },
+            <span style="color:#7bdf8e;">"http://10.0.0.2:8080"</span>: { <span style="color:#7bdf8e;">"weight"</span>: <span style="color:#ffc45e;">3</span> }
+          },
+          <span style="color:#7bdf8e;">"keepalive"</span>: <span style="color:#ffc45e;">32</span>
+        <span style="color:#1e3a5f;">... }</span>
 }
 
 <span style="color:#1e3a5f;">// ── NEW TCP/UDP Component (* designed in this project) ──────</span>
@@ -906,9 +910,7 @@ flowchart TB
       },
       <span style="color:#7bdf8e;">"healthCheck"</span>: { <span style="color:#7bdf8e;">"type"</span>: <span style="color:#7bdf8e;">"TCP_CONNECT"</span> },
       <span style="color:#7bdf8e;">"gracefulDelay"</span>: <span style="color:#ffc45e;">60</span>       <span style="color:#1e3a5f;">// * drain long-lived connections</span>
-    }
-  }
-}</pre>
+      <span style="color:#1e3a5f;">... }</span>}</pre>
       </div>
     </div>
 
@@ -981,7 +983,7 @@ exec.Command(<span style="color:#7bdf8e;">"nginx"</span>, <span style="color:#7b
   </div>
 
   <!-- Execution timeline -->
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:48px;margin-top:48px;">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:48px;margin-top:20px;">
     <div>
       <h3 style="font-family:'Bebas Neue',sans-serif;font-size:28px;color:var(--heading);letter-spacing:2px;margin-bottom:28px;">Execution Ownership</h3>
       <div class="timeline">
