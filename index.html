@@ -939,6 +939,7 @@ flowchart TB
     <span style="color:#7b61ff;">server</span> {
         <span style="color:#ffc45e;">listen</span>       80;
         <span style="color:#ffc45e;">server_name</span>  api.example.com;
+        <span style="color:#ffc45e;">status_zone</span>  <span style="color:#00c8ff;">my-http-component</span>; <span style="color:#1e3a5f;">// derived from Component metadata.name</span>
         <span style="color:#7b61ff;">location</span> /api {
             <span style="color:#ffc45e;">proxy_pass</span>         http://api-backend;
             <span style="color:#ffc45e;">proxy_http_version</span> 1.1;
@@ -957,6 +958,7 @@ flowchart TB
     <span style="color:#7b61ff;">server</span> {
         <span style="color:#ffc45e;">listen</span>                  5432;
         <span style="color:#ffc45e;">proxy_pass</span>              db-pool;
+        <span style="color:#ffc45e;">status_zone</span>             <span style="color:#00c8ff;">db-frontend</span>; <span style="color:#1e3a5f;">// from streamIngress.serverName — operator-provided</span>
         <span style="color:#ffc45e;">proxy_connect_timeout</span>   1s;
         <span style="color:#ffc45e;">proxy_timeout</span>           10m;
         <span style="color:#ffc45e;">worker_shutdown_timeout</span> 60s; <span style="color:#1e3a5f;">// gracefulDelay</span>
@@ -1243,14 +1245,14 @@ erDiagram
 
   <div class="solved-row" style="grid-template-columns:1fr 1fr 1fr;margin-top:36px;">
     <div class="solved-card">
-      <div class="solved-label">Solution — Schema</div>
-      <div class="solved-title">Nullable sparse columns across 5 tables</div>
-      <div class="solved-desc">Benchmarked 3 options. <code>upstream_group</code>, <code>server_zone</code>, and <code>sample_count</code> added as genuinely new columns — only stream dims are sparse nullable; <code>sample_count</code> populates for all events (always 1 on raw insert) enabling correct weighted re-aggregation. Design propagated to all four rollup tables via MaterializedView fan-out. HTTP hot path unchanged.</div>
-    </div>
-    <div class="solved-card">
       <div class="solved-label">Solution — Cardinality</div>
       <div class="solved-title">Multi-layer guardrail system</div>
       <div class="solved-desc">API cap on distinct server zone names → Receiver LRU guard → <code>__overflow__</code> bucket instead of dropping → alert at 80% cap. Cardinality ceiling enforced before data reaches Clickhouse. <code>NGINX_METRIC_7D</code> MaterializedView provides long-term compressed rollup for historical queries.</div>
+    </div>
+    <div class="solved-card">
+      <div class="solved-label">Solution — Schema</div>
+      <div class="solved-title">Nullable sparse columns across 5 tables</div>
+      <div class="solved-desc">Benchmarked 3 options. <code>upstream_group</code>, <code>server_zone</code>, and <code>sample_count</code> added as genuinely new columns — only stream dims are sparse nullable; <code>sample_count</code> populates for all events (always 1 on raw insert) enabling correct weighted re-aggregation. Design propagated to all four rollup tables via MaterializedView fan-out. HTTP hot path unchanged.</div>
     </div>
     <div class="solved-card">
       <div class="solved-label">Solution — Receiver</div>
@@ -1465,14 +1467,14 @@ sequenceDiagram
       </div>
     </a>
 
-    <a href="https://nginx.org/en/docs/stream/ngx_stream_core_module.html" target="_blank"
+    <a href="https://docs.nginx.com/nginx/admin-guide/load-balancer/tcp-udp-load-balancer/" target="_blank"
        style="display:flex;align-items:flex-start;gap:12px;padding:16px 18px;background:#111827;border:1px solid #1e2d45;border-radius:8px;text-decoration:none;"
        onmouseover="this.style.borderColor='rgba(0,229,160,0.4)'" onmouseout="this.style.borderColor='#1e2d45'">
       <span style="font-family:'DM Mono',monospace;font-size:20px;color:var(--green);line-height:1;margin-top:2px;">⬡</span>
       <div>
-        <div style="font-size:13.5px;font-weight:600;color:var(--heading);margin-bottom:4px;">ngx_stream_core_module</div>
-        <div style="font-size:12px;color:var(--muted);font-family:'DM Mono',monospace;">nginx.org/en/docs/stream/ngx_stream_core_module.html</div>
-        <div style="font-size:12px;color:#64748b;margin-top:4px;">Core stream{} module — the foundation for TCP/UDP load balancing in NGINX</div>
+        <div style="font-size:13.5px;font-weight:600;color:var(--heading);margin-bottom:4px;">TCP and UDP Load Balancing</div>
+        <div style="font-size:12px;color:var(--muted);font-family:'DM Mono',monospace;">docs.nginx.com/nginx/admin-guide/load-balancer/tcp-udp-load-balancer</div>
+        <div style="font-size:12px;color:#64748b;margin-top:4px;">NGINX admin guide — configuring stream{} for TCP/UDP proxying, upstream groups, and status zones</div>
       </div>
     </a>
 
