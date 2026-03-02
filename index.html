@@ -582,6 +582,15 @@ footer a { color: var(--accent); text-decoration: none; }
   .nav-links { display: none; }
   .impact-section { padding: 80px 24px; }
 }
+/* ── WORKFLOW SEQUENCE DIAGRAM — brighter + larger text ── */
+#workflow .mermaid svg text { fill: #f0f6ff !important; font-size: 15px !important; }
+#workflow .mermaid svg .actor { fill: #0f2340 !important; stroke: #3a70c0 !important; }
+#workflow .mermaid svg .actor text { fill: #ffffff !important; font-size: 15px !important; font-weight: 600 !important; }
+#workflow .mermaid svg .note text { fill: #f0f6ff !important; font-size: 14px !important; }
+#workflow .mermaid svg line.actor-line { stroke: #3a70c0 !important; }
+#workflow .mermaid svg .messageLine0,
+#workflow .mermaid svg .messageLine1 { stroke: #5a9fd4 !important; stroke-width: 1.5px !important; }
+#workflow .mermaid svg [class*="arrow"] { fill: #5a9fd4 !important; stroke: #5a9fd4 !important; }
 /* ── MERMAID ERD TEXT OVERRIDES — force bright text in all attribute cells ── */
 .mermaid svg .er.attributeBoxEven text,
 .mermaid svg .er.attributeBoxOdd text,
@@ -1038,7 +1047,7 @@ exec.Command(<span style="color:#7bdf8e;">"nginx"</span>, <span style="color:#7b
     <h2 class="sec-title">Schema Evolution — Two Storage Systems</h2>
     <p class="sec-desc">
       <strong style="color:var(--heading);font-weight:700;">PostgreSQL</strong> owns relational metadata (instances, environments, component config).<br>
-      <strong style="color:var(--heading);font-weight:700;">Clickhouse</strong> owns time-series metrics — the key addition was the <code>family</code> dimension (<code>web</code> vs <code>tcp-udp</code>) as the stream discriminator, plus two genuinely new nullable sparse columns (<code>upstream_group</code>, <code>server_zone</code>) for stream-specific dims. Existing dims like <code>component_name</code>, <code>app_name</code>, <code>proxied_protocol</code> were already in the catalog — extended to carry TCP/UDP values, not added as new columns.
+      <strong style="color:var(--heading);font-weight:700;">Clickhouse</strong> owns time-series metrics — the key addition was the <code>family</code> dimension (<code>web</code> vs <code>tcp-udp</code>) as the stream discriminator, plus two genuinely new nullable sparse columns (<code>upstream_group</code>, <code>server_zone</code>) for stream-specific dims, and <code>sample_count</code> for correct weighted re-aggregation. All three new dims propagate through all four rollup tables (<code>_5M</code>, <code>_1H</code>, <code>_1D</code>, <code>_7D</code>) via MaterializedView fan-out. Existing dims like <code>component_name</code>, <code>app_name</code>, <code>proxied_protocol</code> were already in the catalog — extended to carry TCP/UDP values, not added as new columns.
     </p>
   </div>
 
@@ -1186,17 +1195,17 @@ erDiagram
     <div style="background:rgba(255,77,106,0.06);border:1px solid rgba(255,77,106,0.2);border-radius:10px;padding:20px;">
       <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--red);letter-spacing:2px;margin-bottom:10px;">REJECTED — Option A</div>
       <div style="font-size:14px;font-weight:600;color:var(--heading);margin-bottom:6px;">Separate stream_metrics table</div>
-      <div style="font-size:12.5px;color:var(--muted);">JOIN cost at 1B/day unacceptable. Existing metrics like <code>client.network.latency.max</code> already emit for both HTTP and stream — splitting tables would fragment a unified pipeline.</div>
+      <div style="font-size:12.5px;color:var(--muted);">JOIN cost at 1B/day unacceptable. Existing metrics like <code>client.network.latency.max</code> already emit for both HTTP and stream (per metrics catalog — protocol-agnostic latency) — splitting tables would fragment a unified pipeline and require JOIN at query time for any cross-protocol dashboard.</div>
     </div>
     <div style="background:rgba(255,77,106,0.06);border:1px solid rgba(255,77,106,0.2);border-radius:10px;padding:20px;">
       <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--red);letter-spacing:2px;margin-bottom:10px;">REJECTED — Option B</div>
       <div style="font-size:14px;font-weight:600;color:var(--heading);margin-bottom:6px;">Duplicate existing dims as typed columns</div>
-      <div style="font-size:12.5px;color:var(--muted);">Adding typed copies of <code>component_name</code>, <code>app_name</code>, <code>proxied_protocol</code> as new columns would widen every HTTP row unnecessarily. Benchmarks confirmed SLA regression at existing write volume.</div>
+      <div style="font-size:12.5px;color:var(--muted);">Adding typed copies of already-present dims (<code>component_name</code>, <code>app_name</code>, <code>proxied_protocol</code>) as new stream-typed columns would widen every HTTP row unnecessarily — these dims already exist and just needed to carry TCP/UDP values. Benchmarks confirmed p99 write latency regression at existing 1B/day volume before any TCP/UDP traffic was added.</div>
     </div>
     <div style="background:rgba(0,229,160,0.06);border:1px solid rgba(0,229,160,0.25);border-radius:10px;padding:20px;">
       <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--green);letter-spacing:2px;margin-bottom:10px;">SHIPPED — Option C ✓</div>
       <div style="font-size:14px;font-weight:600;color:var(--heading);margin-bottom:6px;">family dim + 2 nullable sparse columns</div>
-      <div style="font-size:12.5px;color:var(--muted);"><code>family=tcp-udp</code> as stream discriminator. Only <code>upstream_group</code> and <code>server_zone</code> added as truly new nullable columns — no HTTP equivalent. Clickhouse columnar storage makes sparse nulls free. Zero regression confirmed in load test.</div>
+      <div style="font-size:12.5px;color:var(--muted);"><code>family=tcp-udp</code> as stream discriminator. <code>upstream_group</code>, <code>server_zone</code>, and <code>sample_count</code> added as genuinely new nullable sparse columns — no HTTP equivalent, columnar storage makes sparse nulls free. All new dims propagate to <code>_5M</code>, <code>_1H</code>, <code>_1D</code>, <code>_7D</code> via MaterializedView fan-out. Zero regression on p99 write latency and HTTP dashboard query SLA confirmed in load test.</div>
     </div>
   </div>
 </section>
@@ -1235,18 +1244,18 @@ erDiagram
   <div class="solved-row" style="grid-template-columns:1fr 1fr 1fr;margin-top:36px;">
     <div class="solved-card">
       <div class="solved-label">Solution — Schema</div>
-      <div class="solved-title">Nullable sparse columns</div>
-      <div class="solved-desc">Benchmarked 3 options. Nullable cols on existing table — only populated for stream events. Clickhouse columnar storage makes sparse nulls free. HTTP hot path unchanged.</div>
+      <div class="solved-title">Nullable sparse columns across 5 tables</div>
+      <div class="solved-desc">Benchmarked 3 options. <code>upstream_group</code>, <code>server_zone</code>, and <code>sample_count</code> added as genuinely new columns — only stream dims are sparse nullable; <code>sample_count</code> populates for all events (always 1 on raw insert) enabling correct weighted re-aggregation. Design propagated to all four rollup tables via MaterializedView fan-out. HTTP hot path unchanged.</div>
     </div>
     <div class="solved-card">
       <div class="solved-label">Solution — Cardinality</div>
-      <div class="solved-title">5-layer guardrail system</div>
-      <div class="solved-desc">API cap → Receiver LRU guard → <code>__overflow__</code> dim instead of drop → alert at 80% cap → 7-day rollup MaterializedView (~60x storage reduction).</div>
+      <div class="solved-title">Multi-layer guardrail system</div>
+      <div class="solved-desc">API cap on distinct server zone names → Receiver LRU guard → <code>__overflow__</code> bucket instead of dropping → alert at 80% cap. Cardinality ceiling enforced before data reaches Clickhouse. <code>NGINX_METRIC_7D</code> MaterializedView provides long-term compressed rollup for historical queries.</div>
     </div>
     <div class="solved-card">
       <div class="solved-label">Solution — Receiver</div>
       <div class="solved-title">Dual-path metric model</div>
-      <div class="solved-desc">Nullable <code>protocol</code> and <code>serverZone</code> fields added to base metric event. HTTP events never touch these fields. Stream events populate them. Zero breaking change.</div>
+      <div class="solved-desc">Nullable <code>upstream_group</code> and <code>server_zone</code> added to base metric event. HTTP events never touch these fields — stream events populate them. <code>proxied_protocol</code> (pre-existing) extended to carry TCP/UDP values without schema change. Zero breaking change to HTTP pipeline.</div>
     </div>
   </div>
 </section>
@@ -1290,7 +1299,7 @@ erDiagram
           <li>Maintained metrics performance at ~1B/day</li>
           <li>Avoided pipeline fragmentation</li>
           <li>Delivered metrics UI visibility in v1</li>
-          <li>PM expectations exceeded</li>
+          <li>Metrics UI scoped to v2 in PM plan — shipped in v1</li>
         </ul>
       </div>
       <div class="win-card tech">
@@ -1300,7 +1309,7 @@ erDiagram
           <li>Identified highest-risk areas before large investment</li>
           <li>Built POC proving correctness before squad commitment</li>
           <li>Protected HTTP performance invariants at scale</li>
-          <li>Cardinality guardrails designed in from day one</li>
+          <li>Cardinality guardrails designed alongside implementation — API cap, LRU guard, overflow bucket, 80% alert</li>
           <li>Deterministic golden file config test suite</li>
         </ul>
       </div>
@@ -1309,7 +1318,7 @@ erDiagram
         <ul class="win-items">
           <li>Unified 5 squads around shared ERD + OpenAPI artifacts</li>
           <li>Ran structured async-then-sync cross-squad design review</li>
-          <li>Updated schema based on review feedback (3 iterations)</li>
+          <li>Updated schema based on review feedback across multiple iterations</li>
           <li>Finalized API contract before implementation started</li>
           <li>Reduced long-term operational cost via reusable renderer</li>
           <li>Drove cross-functional execution to on-time delivery</li>
@@ -1369,7 +1378,7 @@ sequenceDiagram
     SE->>ARCH: Run structured design review session
     ARCH-->>SE: Schema decision: nullable cols over separate table
     ARCH-->>SE: Add gracefulDelay for long-lived TCP connections
-    SE->>SE: Iterate design (3 rounds), finalize API contract
+    SE->>SE: Iterate design (multiple rounds), finalize API contract
 
     SE->>PM: Sign off on finalized API contract
 
@@ -1385,7 +1394,7 @@ sequenceDiagram
     SE->>SE: Agent protocol updates for stream config + metrics
 
     BE-->>SE: Receiver + schema migration complete
-    FE-->>SE: Stream metrics UI complete (scoped to v2)
+    FE-->>SE: Stream metrics UI complete (shipped in v1 — scoped to v2 in original PM plan)
     QA-->>SE: All golden file tests passing
     OPS-->>SE: Agent rollout plan approved
 
@@ -1425,10 +1434,10 @@ sequenceDiagram
       <ul style="list-style:none;display:flex;flex-direction:column;gap:8px;">
         <li style="font-size:13px;color:#9fbce1;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--green);margin-top:1px;">✓</span>POC (Go template + agent deploy + AVRD collection)</li>
         <li style="font-size:13px;color:#9fbce1;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--green);margin-top:1px;">✓</span>ERD — shared 48h before design review</li>
-        <li style="font-size:13px;color:#9fbce1;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--green);margin-top:1px;">✓</span>OpenAPI contract — signed off by PM + architects</li>
+        <li style="font-size:13px;color:#9fbce1;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--green);margin-top:1px;">✓</span>OpenAPI contract — signed off by PM, reviewed by architects</li>
         <li style="font-size:13px;color:#9fbce1;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--green);margin-top:1px;">✓</span>Frontend UI flow spec</li>
         <li style="font-size:13px;color:#9fbce1;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--green);margin-top:1px;">✓</span>QA golden file test matrix</li>
-        <li style="font-size:13px;color:#9fbce1;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--green);margin-top:1px;">✓</span>6 Jira epics with clear acceptance criteria</li>
+        <li style="font-size:13px;color:#9fbce1;display:flex;gap:8px;align-items:flex-start;"><span style="color:var(--green);margin-top:1px;">✓</span>Jira epics per squad with clear acceptance criteria</li>
       </ul>
     </div>
 
