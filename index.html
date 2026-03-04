@@ -737,7 +737,8 @@ flowchart TB
     DBFW --> CH
     DBFW --> PG
 
-    TMPL -->|gRPC pull, agent-initiated| AGT
+    TMPL -->|config payload| AGT
+    AGT -->|gRPC poll, agent-initiated| TMPL
     AGT -->|gRPC stream, agent push| RECV
           </div>
         </div>
@@ -816,7 +817,8 @@ flowchart TB
     DBFW --> CH
     DBFW --> PG
 
-    TMPL -->|gRPC pull, agent-initiated| AGT
+    TMPL -->|config payload| AGT
+    AGT -->|gRPC poll, agent-initiated| TMPL
     AGT -->|gRPC stream, agent push| RECV
           </div>
         </div>
