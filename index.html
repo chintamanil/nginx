@@ -684,6 +684,7 @@ flowchart TB
     classDef store    fill:#100e0a,stroke:#4a3a28,color:#ffffff
     classDef missing  fill:#2a0a10,stroke:#ef4444,color:#ffbdbd,stroke-dasharray:6 3
     classDef infobox  fill:#080f1e,stroke:#1e3a60,color:#ffffff
+    classDef hidden   fill:none,stroke:none,color:transparent
 
     subgraph CTRL["Controller"]
         direction LR
@@ -718,7 +719,7 @@ flowchart TB
     end
 
     subgraph MSG["NATS JetStream (Control Plane)"]
-        direction TB
+        direction LR
         RECV["Receiver\nHTTP metrics only"]:::existing
         NATS["NATS JetStream"]:::infra
         DBFW["DB Forwarder"]:::existing
@@ -734,12 +735,14 @@ flowchart TB
         PG["PostgreSQL"]:::store
     end
 
+    %% hidden node anchors MSG directly below DP in rank
+    DP --> _R1[ ]:::hidden --> MSG
+
     DBFW --> CH
     DBFW --> PG
 
-    TMPL -->|config payload| AGT
-    AGT -->|gRPC poll, agent-initiated| TMPL
-    AGT -->|gRPC stream, agent push| RECV
+    TMPL -->|gRPC poll, agent-initiated| AGT
+    AGT --->|gRPC stream, agent push| RECV
           </div>
         </div>
       </div>
@@ -762,6 +765,7 @@ flowchart TB
     classDef agent    fill:#0a0a20,stroke:#3a3a8c,color:#ffffff
     classDef store    fill:#100e0a,stroke:#4a3a28,color:#ffffff
     classDef infobox  fill:#03200f,stroke:#00e5a0,color:#b5ffff,stroke-width:1px
+    classDef hidden   fill:none,stroke:none,color:transparent
 
     subgraph CTRL["Controller"]
         direction LR
@@ -798,7 +802,7 @@ flowchart TB
     end
 
     subgraph MSG["NATS JetStream (Control Plane)"]
-        direction TB
+        direction LR
         RECV["Receiver\nnullable TCP/UDP dims\nHTTP hot path unchanged"]:::newc
         NATS["NATS JetStream"]:::infra
         DBFW["DB Forwarder"]:::existing
@@ -814,12 +818,14 @@ flowchart TB
         PG["PostgreSQL\nTCP/UDP Component metadata"]:::newc
     end
 
+    %% invisible node forces MSG to rank below DP
+    DP --> _R2[ ]:::hidden --> MSG
+
     DBFW --> CH
     DBFW --> PG
 
-    TMPL -->|config payload| AGT
-    AGT -->|gRPC poll, agent-initiated| TMPL
-    AGT -->|gRPC stream, agent push| RECV
+    TMPL -->|gRPC poll, agent-initiated| AGT
+    AGT --->|gRPC stream, agent push| RECV
           </div>
         </div>
       </div>
