@@ -738,8 +738,9 @@ flowchart TB
     %% hidden node anchors MSG directly below DP in rank
     DP --> _R1[ ]:::hidden --> MSG
 
+    EXT -->|writes desired state| PG
+    TMPL -->|reads desired state| PG
     DBFW --> CH
-    DBFW --> PG
 
     TMPL -->|gRPC poll, agent-initiated| AGT
     AGT --->|gRPC stream, agent push| RECV
@@ -821,8 +822,9 @@ flowchart TB
     %% invisible node forces MSG to rank below DP
     DP --> _R2[ ]:::hidden --> MSG
 
+    EXT -->|writes desired state| PG
+    TMPL -->|reads desired state| PG
     DBFW --> CH
-    DBFW --> PG
 
     TMPL -->|gRPC poll, agent-initiated| AGT
     AGT --->|gRPC stream, agent push| RECV
